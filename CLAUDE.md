@@ -40,7 +40,7 @@ Session codes: `fp1 fp2 fp3 sq sprint q race`. `summary.json` has a distinct sha
 
 ## Rules
 
-- **Derive, don't hardcode.** Grid size, knockout counts, points systems, sprint weekends: all from data. Quali knockout segment = last of Q1/Q2/Q3 with a time.
+- **Derive, don't hardcode.** Grid size, knockout counts, points systems, sprint weekends: all from data. Quali knockout segment = last of Q1/Q2/Q3 the driver took part in: Jolpica lists a segment key with an empty time when a driver reached it without setting a lap (e.g. `"Q2": ""`). Without Jolpica (sprint qualifying), fall back to the last segment with a time.
 - Times as integer milliseconds; dates as UTC ISO-8601.
 - Every file has `schemaVersion` and `generatedAt`. Output models are `pydantic` v2; validate before writing.
 - Deterministic output: sorted keys, stable ordering, so unchanged data produces unchanged hashes. Keep the previous `generatedAt` when the rest of a file is unchanged.
@@ -56,7 +56,7 @@ Session codes: `fp1 fp2 fp3 sq sprint q race`. `summary.json` has a distinct sha
 - **Grid and fastest lap** come from Jolpica results (`grid`, `FastestLap.rank == "1"`). OpenF1 `starting_grid` is only a fallback.
 - **Gaps.** `gapMs` is an integer on the lead lap. For lapped cars `gapMs` is null and `lapsBehind` is an integer (OpenF1 sends `"+1 LAP"` / `"+2 LAPS"`).
 - **Laps.** `laps.json` carries per-lap `pos` and `gapMs`/`lapsBehind`, from `position` and `intervals` reduced to the last value at or before each lap's end.
-- **Penalties.** Race-control entries keep the raw `message` and add `penalty: {driver, kind, seconds} | null`, with `kind` one of `time | driveThrough | stopGo | grid`. `seconds` holds seconds for time penalties, places for grid penalties, null otherwise. "PENALTY SERVED" and investigation messages have no penalty.
+- **Penalties.** Race-control entries keep the raw `message` and add `penalty: {driver, kind, seconds} | null`, with `kind` one of `time | driveThrough | stopGo | grid`. `seconds` holds seconds for time and stop-go penalties, places for grid penalties, null otherwise. "PENALTY SERVED" and investigation messages have no penalty.
 - **Stats.** Season stats are race-only (`wins, podiums, poles, dnfs, points`), with separate `sprintWins, sprintPodiums, sprintPoles, sprintPoints`.
 - **Standings** keep drivers no longer racing, with `active: false`.
 - **Circuits.** Coordinates stay in the OpenF1 location frame as integers; `rotation` is passed through and applied in the app.
@@ -157,3 +157,7 @@ Findings:
   - OpenF1 `session_result.gap_to_leader` and `intervals.gap_to_leader` are strings such as `"+1 LAP"` for lapped cars.
   - Jolpica `FastestLap.rank` is per driver. The fastest lap is `rank == "1"`; the winner had rank 3.
   - Stewards messages have `driver_number: null`. The car number appears only in the text, e.g. `5 SECOND TIME PENALTY FOR CAR 23 (ALB) - REJOINING UNSAFELY`.
+- Quali (Brazil 2026): Verstappen was P16 with `Q2: ""` in Jolpica and no Q2 time in OpenF1. "Last segment with a time" puts him out in Q1 (counts 7/5); Jolpica participation gives the real 6/6.
+- `laps.json` `pos` is the on-track running order at each lap end, so it can differ from the final classification after post-race penalties (Brazil 2026: Leclerc/Lawson).
+- MultiViewer outline units are decimetres. Its reference lap is old (Interlagos uses a 2021 FP1 lap), so check circuits that changed layout. `lengthM` is the outline perimeter: 4,232 m vs the official 4,309 m (−1.8%).
+- OpenF1 returned one 429 with `Retry-After: 60` during fixture recording at 0.4 s spacing.
