@@ -1,0 +1,30 @@
+f1-data
+Copyright (c) 2026 Shreyansh Tripathi
+
+The code in this repository is licensed under the MIT License (see LICENSE).
+The published data is derived from the third-party sources below. Their terms
+apply to the data they provide; check each source before reusing the data.
+
+OpenF1 (https://openf1.org, https://api.openf1.org/v1/)
+  Session data: meetings, sessions, drivers, results, laps, stints, pit stops,
+  intervals, positions, race control, weather, overtakes, team radio links.
+
+Jolpica F1 (https://github.com/jolpica/jolpica-f1, https://api.jolpi.ca/ergast/f1/)
+  Ergast-compatible API: schedule, round numbers, results, qualifying, sprint
+  results, driver and constructor standings.
+
+F1DB (https://github.com/f1db/f1db)
+  Career totals. F1DB is licensed under the Creative Commons Attribution 4.0
+  International License (CC BY 4.0, https://creativecommons.org/licenses/by/4.0/).
+  Data is used as published, aggregated into per-driver career totals.
+
+MultiViewer (https://multiviewer.app)
+  Circuit outlines, corners and rotation via api.multiviewer.app, linked from
+  OpenF1 meeting data.
+
+Team radio: only links to recordings hosted by Formula 1 are stored; no audio is
+re-hosted.
+
+This project is unofficial and is not associated in any way with the Formula 1
+companies. F1, FORMULA ONE, FORMULA 1, FIA FORMULA ONE WORLD CHAMPIONSHIP,
+GRAND PRIX and related marks are trade marks of Formula One Licensing B.V.
