@@ -108,6 +108,7 @@ uv run f1data build --year 2026
 ## Working style
 
 - Plan before multi-file changes; keep diffs small; one concern per commit.
+- Don't add Co-Authored-By trailers to commits.
 - Add a fixture-based test for every builder.
 - When a source behaves differently than documented here, update the Sources table and the Findings log below.
 
