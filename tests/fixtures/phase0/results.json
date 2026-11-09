@@ -1,0 +1,541 @@
+{
+ "f1db": {
+  "driver_fields": [
+   "abbreviation",
+   "bestChampionshipPosition",
+   "bestRaceResult",
+   "bestSprintRaceResult",
+   "bestStartingGridPosition",
+   "countryOfBirthCountryId",
+   "dateOfBirth",
+   "dateOfDeath",
+   "familyRelationships",
+   "firstName",
+   "fullName",
+   "gender",
+   "id",
+   "lastName",
+   "name",
+   "nationalityCountryId",
+   "permanentNumber",
+   "placeOfBirth",
+   "secondNationalityCountryId",
+   "totalChampionshipPoints",
+   "totalChampionshipWins",
+   "totalDriverOfTheDay",
+   "totalFastestLaps",
+   "totalGrandSlams",
+   "totalPodiums",
+   "totalPoints",
+   "totalPolePositions",
+   "totalRaceEntries",
+   "totalRaceLaps",
+   "totalRaceStarts",
+   "totalRaceWins",
+   "totalSprintRaceStarts",
+   "totalSprintRaceWins"
+  ],
+  "drivers_in_season": 36,
+  "latest_race_with_results": [
+   2026,
+   20
+  ],
+  "published_at": "2026-11-09T07:04:09Z",
+  "tag": "v2026.20.0",
+  "top_level_keys": [
+   "chassis",
+   "circuits",
+   "constructors",
+   "continents",
+   "countries",
+   "drivers",
+   "engineManufacturers",
+   "engines",
+   "entrants",
+   "grandsPrix",
+   "races",
+   "seasons",
+   "tyreManufacturers"
+  ],
+  "uncompressed_bytes": 85280796
+ },
+ "fastf1": {
+  "car_data": 0,
+  "circuit_info": "error: DataNotLoadedError: The data you are trying to access has not been loaded yet. See `Session.load`",
+  "laps": "error: DataNotLoadedError",
+  "load": "returned",
+  "load_ms": 7333,
+  "log_tail": [
+   "Failed to authenticate with Formula 1 account, continuing without authentication: No F1 account credentials available. Set the environment variables F1_USERNAME and F1_PASSWORD.",
+   "Car telemetry data is unavailable!",
+   "Failed to authenticate with Formula 1 account, continuing without authentication: No F1 account credentials available. Set the environment variables F1_USERNAME and F1_PASSWORD.",
+   "Car position data is unavailable!",
+   "Failed to determine `Session.t0_date`!",
+   "Failed to authenticate with Formula 1 account, continuing without authentication: No F1 account credentials available. Set the environment variables F1_USERNAME and F1_PASSWORD.",
+   "Failed to load weather data!",
+   "Traceback for failure in weather data",
+   "    raise SessionNotAvailableError(",
+   "fastf1._api.SessionNotAvailableError: No data for this session! If this session only finished recently, please try again in a few minutes.",
+   "Failed to authenticate with Formula 1 account, continuing without authentication: No F1 account credentials available. Set the environment variables F1_USERNAME and F1_PASSWORD.",
+   "Failed to load race control messages!",
+   "Traceback for failure in race control messages",
+   "    raise SessionNotAvailableError(",
+   "fastf1._api.SessionNotAvailableError: No data for this session! If this session only finished recently, please try again in a few minutes."
+  ],
+  "pos_data": 0,
+  "race_control_messages": "error: DataNotLoadedError",
+  "results": 22,
+  "round": "20",
+  "session_info": "error: DataNotLoadedError",
+  "version": "3.9.2",
+  "weather_data": "error: DataNotLoadedError"
+ },
+ "generatedAt": "2026-11-09T18:41:37+00:00",
+ "jolpica": {
+  "race_name": "Brazilian Grand Prix",
+  "round": "20",
+  "rounds_in_schedule": 23
+ },
+ "openf1_race_sessions_completed": 20,
+ "replay": {
+  "1hz": {
+   "gzip_bytes": 984213,
+   "json_bytes": 3117841,
+   "samples": 144364
+  },
+  "2hz": {
+   "gzip_bytes": 1863251,
+   "json_bytes": 6183097,
+   "samples": 286330
+  },
+  "race_window": [
+   "2026-11-08T17:00:00+00:00",
+   "2026-11-08T19:00:00+00:00"
+  ],
+  "raw_bytes_all_session": 102900505,
+  "raw_records": 794970
+ },
+ "requests": [
+  {
+   "auth_needed": false,
+   "bytes": 20557,
+   "fixture": "openf1_meetings_2026.json",
+   "label": "meetings (2026)",
+   "ms": 942,
+   "records": 27,
+   "source": "openf1",
+   "status": 200,
+   "url": "https://api.openf1.org/v1/meetings?year=2026"
+  },
+  {
+   "auth_needed": false,
+   "bytes": 8986,
+   "fixture": "openf1_sessions_2026_race.json",
+   "label": "sessions (2026 races)",
+   "ms": 379,
+   "records": 25,
+   "source": "openf1",
+   "status": 200,
+   "url": "https://api.openf1.org/v1/sessions?year=2026&session_name=Race"
+  },
+  {
+   "auth_needed": false,
+   "bytes": 766,
+   "fixture": "openf1_meetings.json",
+   "label": "meetings",
+   "ms": 232,
+   "records": 1,
+   "source": "openf1",
+   "status": 200,
+   "url": "https://api.openf1.org/v1/meetings?meeting_key=1299"
+  },
+  {
+   "auth_needed": false,
+   "bytes": 11405,
+   "fixture": "multiviewer_circuit_14_2026.json",
+   "label": "circuit_info_url",
+   "ms": 625,
+   "records": null,
+   "source": "multiviewer",
+   "status": 200,
+   "url": "https://api.multiviewer.app/api/v1/circuits/14/2026"
+  },
+  {
+   "auth_needed": false,
+   "bytes": 1843,
+   "fixture": "openf1_sessions_weekend.json",
+   "label": "sessions (weekend)",
+   "ms": 242,
+   "records": 5,
+   "source": "openf1",
+   "status": 200,
+   "url": "https://api.openf1.org/v1/sessions?meeting_key=1299"
+  },
+  {
+   "auth_needed": false,
+   "bytes": 9025,
+   "fixture": "openf1_drivers.json",
+   "label": "drivers",
+   "ms": 237,
+   "records": 22,
+   "source": "openf1",
+   "status": 200,
+   "url": "https://api.openf1.org/v1/drivers?session_key=11412"
+  },
+  {
+   "auth_needed": false,
+   "bytes": 4047,
+   "fixture": "openf1_session_result.json",
+   "label": "session_result",
+   "ms": 239,
+   "records": 22,
+   "source": "openf1",
+   "status": 200,
+   "url": "https://api.openf1.org/v1/session_result?session_key=11412"
+  },
+  {
+   "auth_needed": false,
+   "bytes": 675552,
+   "fixture": "openf1_laps.json",
+   "label": "laps",
+   "ms": 910,
+   "records": 1437,
+   "source": "openf1",
+   "status": 200,
+   "url": "https://api.openf1.org/v1/laps?session_key=11412"
+  },
+  {
+   "auth_needed": false,
+   "bytes": 11897,
+   "fixture": "openf1_stints.json",
+   "label": "stints",
+   "ms": 242,
+   "records": 80,
+   "source": "openf1",
+   "status": 200,
+   "url": "https://api.openf1.org/v1/stints?session_key=11412"
+  },
+  {
+   "auth_needed": false,
+   "bytes": 10587,
+   "fixture": "openf1_pit.json",
+   "label": "pit",
+   "ms": 237,
+   "records": 58,
+   "source": "openf1",
+   "status": 200,
+   "url": "https://api.openf1.org/v1/pit?session_key=11412"
+  },
+  {
+   "auth_needed": false,
+   "bytes": 4178210,
+   "fixture": "openf1_intervals.sample.json",
+   "label": "intervals",
+   "ms": 2825,
+   "records": 29368,
+   "source": "openf1",
+   "status": 200,
+   "url": "https://api.openf1.org/v1/intervals?session_key=11412"
+  },
+  {
+   "auth_needed": false,
+   "bytes": 66532,
+   "fixture": "openf1_position.json",
+   "label": "position",
+   "ms": 269,
+   "records": 576,
+   "source": "openf1",
+   "status": 200,
+   "url": "https://api.openf1.org/v1/position?session_key=11412"
+  },
+  {
+   "auth_needed": false,
+   "bytes": 56652,
+   "fixture": "openf1_race_control.json",
+   "label": "race_control",
+   "ms": 986,
+   "records": 212,
+   "source": "openf1",
+   "status": 200,
+   "url": "https://api.openf1.org/v1/race_control?session_key=11412"
+  },
+  {
+   "auth_needed": false,
+   "bytes": 34395,
+   "fixture": "openf1_weather.json",
+   "label": "weather",
+   "ms": 251,
+   "records": 160,
+   "source": "openf1",
+   "status": 200,
+   "url": "https://api.openf1.org/v1/weather?session_key=11412"
+  },
+  {
+   "auth_needed": false,
+   "bytes": 7477,
+   "fixture": "openf1_team_radio.json",
+   "label": "team_radio",
+   "ms": 241,
+   "records": 30,
+   "source": "openf1",
+   "status": 200,
+   "url": "https://api.openf1.org/v1/team_radio?session_key=11412"
+  },
+  {
+   "auth_needed": false,
+   "bytes": 46142,
+   "fixture": "openf1_overtakes.json",
+   "label": "overtakes",
+   "ms": 249,
+   "records": 297,
+   "source": "openf1",
+   "status": 200,
+   "url": "https://api.openf1.org/v1/overtakes?session_key=11412"
+  },
+  {
+   "auth_needed": false,
+   "bytes": 3575,
+   "fixture": "openf1_championship_drivers.json",
+   "label": "championship_drivers",
+   "ms": 263,
+   "records": 25,
+   "source": "openf1",
+   "status": 200,
+   "url": "https://api.openf1.org/v1/championship_drivers?session_key=11412"
+  },
+  {
+   "auth_needed": false,
+   "bytes": 1628,
+   "fixture": "openf1_championship_teams.json",
+   "label": "championship_teams",
+   "ms": 265,
+   "records": 11,
+   "source": "openf1",
+   "status": 200,
+   "url": "https://api.openf1.org/v1/championship_teams?session_key=11412"
+  },
+  {
+   "auth_needed": false,
+   "bytes": 2098,
+   "fixture": "openf1_starting_grid.json",
+   "label": "starting_grid",
+   "ms": 531,
+   "records": 22,
+   "source": "openf1",
+   "status": 200,
+   "url": "https://api.openf1.org/v1/starting_grid?meeting_key=1299"
+  },
+  {
+   "auth_needed": false,
+   "bytes": 102900505,
+   "fixture": "openf1_location.sample.json",
+   "label": "location (all drivers, 22 requests)",
+   "ms": 104265,
+   "records": 794970,
+   "source": "openf1",
+   "status": [
+    200
+   ],
+   "url": "https://api.openf1.org/v1/location?session_key=11412&driver_number=<n>"
+  },
+  {
+   "auth_needed": false,
+   "bytes": 135099031,
+   "fixture": "openf1_car_data.sample.json",
+   "label": "car_data (all drivers, 22 requests)",
+   "ms": 88811,
+   "records": 795406,
+   "source": "openf1",
+   "status": [
+    200
+   ],
+   "url": "https://api.openf1.org/v1/car_data?session_key=11412&driver_number=<n>"
+  },
+  {
+   "auth_needed": false,
+   "bytes": 19449,
+   "label": "team_radio meeting 1308 (Kuala Lumpur)",
+   "ms": 307,
+   "records": 78,
+   "source": "openf1",
+   "status": 200,
+   "url": "https://api.openf1.org/v1/team_radio?meeting_key=1308"
+  },
+  {
+   "auth_needed": false,
+   "bytes": 22210,
+   "label": "team_radio meeting 1296 (Singapore)",
+   "ms": 263,
+   "records": 88,
+   "source": "openf1",
+   "status": 200,
+   "url": "https://api.openf1.org/v1/team_radio?meeting_key=1296"
+  },
+  {
+   "auth_needed": false,
+   "bytes": 23802,
+   "label": "team_radio meeting 1297 (Austin)",
+   "ms": 258,
+   "records": 93,
+   "source": "openf1",
+   "status": 200,
+   "url": "https://api.openf1.org/v1/team_radio?meeting_key=1297"
+  },
+  {
+   "auth_needed": false,
+   "bytes": 20612,
+   "label": "team_radio meeting 1298 (Mexico City)",
+   "ms": 314,
+   "records": 81,
+   "source": "openf1",
+   "status": 200,
+   "url": "https://api.openf1.org/v1/team_radio?meeting_key=1298"
+  },
+  {
+   "auth_needed": false,
+   "bytes": 25877,
+   "label": "team_radio meeting 1299 (Interlagos)",
+   "ms": 264,
+   "records": 102,
+   "source": "openf1",
+   "status": 200,
+   "url": "https://api.openf1.org/v1/team_radio?meeting_key=1299"
+  },
+  {
+   "auth_needed": false,
+   "bytes": 14292,
+   "fixture": "jolpica_schedule.json",
+   "label": "schedule",
+   "ms": 90,
+   "records": 23,
+   "source": "jolpica",
+   "status": 200,
+   "url": "https://api.jolpi.ca/ergast/f1/2026.json"
+  },
+  {
+   "auth_needed": false,
+   "bytes": 12978,
+   "fixture": "jolpica_results.json",
+   "label": "results",
+   "ms": 43,
+   "records": 22,
+   "source": "jolpica",
+   "status": 200,
+   "url": "https://api.jolpi.ca/ergast/f1/2026/20/results.json"
+  },
+  {
+   "auth_needed": false,
+   "bytes": 9448,
+   "fixture": "jolpica_qualifying.json",
+   "label": "qualifying",
+   "ms": 39,
+   "records": 22,
+   "source": "jolpica",
+   "status": 200,
+   "url": "https://api.jolpi.ca/ergast/f1/2026/20/qualifying.json"
+  },
+  {
+   "auth_needed": false,
+   "bytes": 188,
+   "fixture": "jolpica_sprint.json",
+   "label": "sprint",
+   "ms": 33,
+   "records": 0,
+   "source": "jolpica",
+   "status": 200,
+   "url": "https://api.jolpi.ca/ergast/f1/2026/20/sprint.json"
+  },
+  {
+   "auth_needed": false,
+   "bytes": 10822,
+   "fixture": "jolpica_driver_standings.json",
+   "label": "driverstandings",
+   "ms": 38,
+   "records": 25,
+   "source": "jolpica",
+   "status": 200,
+   "url": "https://api.jolpi.ca/ergast/f1/2026/20/driverStandings.json"
+  },
+  {
+   "auth_needed": false,
+   "bytes": 2507,
+   "fixture": "jolpica_constructor_standings.json",
+   "label": "constructorstandings",
+   "ms": 28,
+   "records": 11,
+   "source": "jolpica",
+   "status": 200,
+   "url": "https://api.jolpi.ca/ergast/f1/2026/20/constructorStandings.json"
+  },
+  {
+   "auth_needed": false,
+   "bytes": 37322,
+   "label": "releases/latest",
+   "ms": 476,
+   "records": null,
+   "source": "f1db",
+   "status": 200,
+   "url": "https://api.github.com/repos/f1db/f1db/releases/latest"
+  },
+  {
+   "auth_needed": false,
+   "bytes": 6782140,
+   "fixture": "f1db_drivers_2026.json",
+   "label": "f1db-json-single.zip",
+   "ms": 779,
+   "records": 921,
+   "source": "f1db",
+   "status": 200,
+   "url": "https://github.com/f1db/f1db/releases/download/v2026.20.0/f1db-json-single.zip"
+  }
+ ],
+ "target": {
+  "circuit_short_name": "Interlagos",
+  "date_end": "2026-11-08T19:00:00+00:00",
+  "date_start": "2026-11-08T17:00:00+00:00",
+  "meeting_key": 1299,
+  "session_key": 11412
+ },
+ "team_radio": {
+  "audio": {
+   "auth_needed": false,
+   "bytes": 289536,
+   "content_type": "audio/mpeg",
+   "ms": 122,
+   "status": 200,
+   "url": "https://livetiming.formula1.com/static/2026/2026-11-08_São_Paulo_Grand_Prix/2026-11-08_Race/TeamRadio/NOR_1_20261108_154500.mp3"
+  },
+  "rounds": [
+   {
+    "circuit": "Kuala Lumpur",
+    "clips": 78,
+    "meeting_key": 1308,
+    "sample_url": "https://livetiming.formula1.com/static/2026/2026-10-04_Bahrain_Grand_Prix/2026-10-04_Race/TeamRadio/LIN_41_20261004_182626.mp3"
+   },
+   {
+    "circuit": "Singapore",
+    "clips": 88,
+    "meeting_key": 1296,
+    "sample_url": "https://livetiming.formula1.com/static/2026/2026-10-11_Singapore_Grand_Prix/2026-10-11_Race/TeamRadio/ANT_12_20261011_214827.mp3"
+   },
+   {
+    "circuit": "Austin",
+    "clips": 93,
+    "meeting_key": 1297,
+    "sample_url": "https://livetiming.formula1.com/static/2026/2026-10-25_United_States_Grand_Prix/2026-10-25_Race/TeamRadio/LAW_30_20261025_164451.mp3"
+   },
+   {
+    "circuit": "Mexico City",
+    "clips": 81,
+    "meeting_key": 1298,
+    "sample_url": "https://livetiming.formula1.com/static/2026/2026-11-01_Mexico_City_Grand_Prix/2026-11-01_Race/TeamRadio/BOR_5_20261101_162902.mp3"
+   },
+   {
+    "circuit": "Interlagos",
+    "clips": 102,
+    "meeting_key": 1299,
+    "sample_url": "https://livetiming.formula1.com/static/2026/2026-11-08_São_Paulo_Grand_Prix/2026-11-08_Race/TeamRadio/NOR_1_20261108_154500.mp3"
+   }
+  ]
+ }
+}

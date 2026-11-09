@@ -1,0 +1,98 @@
+{
+ "assets": [
+  {
+   "name": "checksums_sha256.txt",
+   "size": 1986
+  },
+  {
+   "name": "f1db-csv.tgz",
+   "size": 4507479
+  },
+  {
+   "name": "f1db-csv.zip",
+   "size": 4509622
+  },
+  {
+   "name": "f1db-json-single.tgz",
+   "size": 6782428
+  },
+  {
+   "name": "f1db-json-single.zip",
+   "size": 6782140
+  },
+  {
+   "name": "f1db-json-splitted.tgz",
+   "size": 5922945
+  },
+  {
+   "name": "f1db-json-splitted.zip",
+   "size": 5943753
+  },
+  {
+   "name": "f1db-smile-single.zip",
+   "size": 4564102
+  },
+  {
+   "name": "f1db-smile-splitted.zip",
+   "size": 4780891
+  },
+  {
+   "name": "f1db-sql-mysql-single-inserts.tgz",
+   "size": 4823031
+  },
+  {
+   "name": "f1db-sql-mysql-single-inserts.zip",
+   "size": 4822906
+  },
+  {
+   "name": "f1db-sql-mysql.tgz",
+   "size": 5858960
+  },
+  {
+   "name": "f1db-sql-mysql.zip",
+   "size": 5858868
+  },
+  {
+   "name": "f1db-sql-postgresql-single-inserts.tgz",
+   "size": 4823050
+  },
+  {
+   "name": "f1db-sql-postgresql-single-inserts.zip",
+   "size": 4822939
+  },
+  {
+   "name": "f1db-sql-postgresql.tgz",
+   "size": 5861520
+  },
+  {
+   "name": "f1db-sql-postgresql.zip",
+   "size": 5861341
+  },
+  {
+   "name": "f1db-sql-sqlite-single-inserts.tgz",
+   "size": 4806222
+  },
+  {
+   "name": "f1db-sql-sqlite-single-inserts.zip",
+   "size": 4806122
+  },
+  {
+   "name": "f1db-sql-sqlite.tgz",
+   "size": 5842420
+  },
+  {
+   "name": "f1db-sql-sqlite.zip",
+   "size": 5842210
+  },
+  {
+   "name": "f1db-sqlite.tgz",
+   "size": 15716388
+  },
+  {
+   "name": "f1db-sqlite.zip",
+   "size": 15716096
+  }
+ ],
+ "published_at": "2026-11-09T07:04:09Z",
+ "tag_name": "v2026.20.0"
+}

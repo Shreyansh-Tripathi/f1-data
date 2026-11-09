@@ -1,0 +1,15 @@
+{
+ "MRData": {
+  "RaceTable": {
+   "Races": [],
+   "round": "20",
+   "season": "2026"
+  },
+  "limit": "30",
+  "offset": "0",
+  "series": "f1",
+  "total": "0",
+  "url": "https://api.jolpi.ca/ergast/f1/2026/20/sprint.json",
+  "xmlns": ""
+ }
+}

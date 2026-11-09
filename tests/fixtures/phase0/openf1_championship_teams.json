@@ -1,0 +1,101 @@
+[
+ {
+  "meeting_key": 1299,
+  "points_current": 652.0,
+  "points_start": 630.0,
+  "position_current": 1,
+  "position_start": 1,
+  "session_key": 11412,
+  "team_name": "Mercedes"
+ },
+ {
+  "meeting_key": 1299,
+  "points_current": 510.0,
+  "points_start": 504.0,
+  "position_current": 2,
+  "position_start": 2,
+  "session_key": 11412,
+  "team_name": "Ferrari"
+ },
+ {
+  "meeting_key": 1299,
+  "points_current": 415.0,
+  "points_start": 382.0,
+  "position_current": 3,
+  "position_start": 3,
+  "session_key": 11412,
+  "team_name": "Red Bull Racing"
+ },
+ {
+  "meeting_key": 1299,
+  "points_current": 398.0,
+  "points_start": 365.0,
+  "position_current": 4,
+  "position_start": 4,
+  "session_key": 11412,
+  "team_name": "McLaren"
+ },
+ {
+  "meeting_key": 1299,
+  "points_current": 114.0,
+  "points_start": 108.0,
+  "position_current": 5,
+  "position_start": 5,
+  "session_key": 11412,
+  "team_name": "Racing Bulls"
+ },
+ {
+  "meeting_key": 1299,
+  "points_current": 69.0,
+  "points_start": 69.0,
+  "position_current": 6,
+  "position_start": 6,
+  "session_key": 11412,
+  "team_name": "Alpine"
+ },
+ {
+  "meeting_key": 1299,
+  "points_current": 31.0,
+  "points_start": 31.0,
+  "position_current": 7,
+  "position_start": 7,
+  "session_key": 11412,
+  "team_name": "Haas F1 Team"
+ },
+ {
+  "meeting_key": 1299,
+  "points_current": 28.0,
+  "points_start": 27.0,
+  "position_current": 8,
+  "position_start": 8,
+  "session_key": 11412,
+  "team_name": "Audi"
+ },
+ {
+  "meeting_key": 1299,
+  "points_current": 12.0,
+  "points_start": 12.0,
+  "position_current": 9,
+  "position_start": 9,
+  "session_key": 11412,
+  "team_name": "Williams"
+ },
+ {
+  "meeting_key": 1299,
+  "points_current": 7.0,
+  "points_start": 7.0,
+  "position_current": 10,
+  "position_start": 10,
+  "session_key": 11412,
+  "team_name": "Aston Martin"
+ },
+ {
+  "meeting_key": 1299,
+  "points_current": 0.0,
+  "points_start": 0.0,
+  "position_current": 11,
+  "position_start": 11,
+  "session_key": 11412,
+  "team_name": "Cadillac"
+ }
+]
