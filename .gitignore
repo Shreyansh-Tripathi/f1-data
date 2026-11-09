@@ -1,8 +1,11 @@
+# local caches and build output (site/ is published to gh-pages by CI)
 .cache/
-__pycache__/
-.venv/
 site/
-*.zip
-.env
+.venv/
+__pycache__/
+*.py[cod]
 .pytest_cache/
 .ruff_cache/
+*.zip
+.env
+*.env
