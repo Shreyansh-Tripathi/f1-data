@@ -28,7 +28,7 @@ MAX_RETRIES = 5  # backoff 1, 2, 4, 8, 16 s
 
 # Minimum seconds between requests to the same host.
 MIN_INTERVAL_S = {
-    "api.openf1.org": 0.4,  # ~30 req / 10 s
+    "api.openf1.org": 2.0,  # observed ~30 req / min (429 + Retry-After: 60 when faster)
     "api.jolpi.ca": 0.5,  # ~4 req / s
     "api.multiviewer.app": 1.0,
     "api.github.com": 1.0,

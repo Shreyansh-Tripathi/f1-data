@@ -3,7 +3,7 @@ import logging
 import httpx
 import pytest
 
-from f1data.http import CacheMiss, HttpClient, HttpError
+from f1data.http import MIN_INTERVAL_S, CacheMiss, HttpClient, HttpError
 
 
 class FakeTime:
@@ -52,7 +52,7 @@ def test_rate_limit_spaces_requests_per_host(tmp_path):
     client, t, _ = make(tmp_path, lambda r: httpx.Response(200, json=[]))
     client.get_json("https://api.openf1.org/v1/a")
     client.get_json("https://api.openf1.org/v1/b")
-    assert t.sleeps == [pytest.approx(0.4)]
+    assert t.sleeps == [pytest.approx(MIN_INTERVAL_S["api.openf1.org"])]
 
 
 def test_jolpica_hourly_budget_blocks(tmp_path, monkeypatch):
