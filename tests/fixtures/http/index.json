@@ -1,0 +1,538 @@
+{
+ "https://api.github.com/repos/f1db/f1db/releases/latest": {
+  "file": "api_github_com_repos_f1db_f1db_releases_latest.json",
+  "kind": "json"
+ },
+ "https://api.jolpi.ca/ergast/f1/2026.json?limit=100": {
+  "file": "api_jolpi_ca_ergast_f1_2026_json_limit_100.json",
+  "kind": "json"
+ },
+ "https://api.jolpi.ca/ergast/f1/2026/1/constructorStandings.json?limit=100": {
+  "file": "api_jolpi_ca_ergast_f1_2026_1_constructorStandings_json_limit_100.json",
+  "kind": "json"
+ },
+ "https://api.jolpi.ca/ergast/f1/2026/1/driverStandings.json?limit=100": {
+  "file": "api_jolpi_ca_ergast_f1_2026_1_driverStandings_json_limit_100.json",
+  "kind": "json"
+ },
+ "https://api.jolpi.ca/ergast/f1/2026/10/constructorStandings.json?limit=100": {
+  "file": "api_jolpi_ca_ergast_f1_2026_10_constructorStandings_json_limit_100.json",
+  "kind": "json"
+ },
+ "https://api.jolpi.ca/ergast/f1/2026/10/driverStandings.json?limit=100": {
+  "file": "api_jolpi_ca_ergast_f1_2026_10_driverStandings_json_limit_100.json",
+  "kind": "json"
+ },
+ "https://api.jolpi.ca/ergast/f1/2026/11/constructorStandings.json?limit=100": {
+  "file": "api_jolpi_ca_ergast_f1_2026_11_constructorStandings_json_limit_100.json",
+  "kind": "json"
+ },
+ "https://api.jolpi.ca/ergast/f1/2026/11/driverStandings.json?limit=100": {
+  "file": "api_jolpi_ca_ergast_f1_2026_11_driverStandings_json_limit_100.json",
+  "kind": "json"
+ },
+ "https://api.jolpi.ca/ergast/f1/2026/12/constructorStandings.json?limit=100": {
+  "file": "api_jolpi_ca_ergast_f1_2026_12_constructorStandings_json_limit_100.json",
+  "kind": "json"
+ },
+ "https://api.jolpi.ca/ergast/f1/2026/12/driverStandings.json?limit=100": {
+  "file": "api_jolpi_ca_ergast_f1_2026_12_driverStandings_json_limit_100.json",
+  "kind": "json"
+ },
+ "https://api.jolpi.ca/ergast/f1/2026/13/constructorStandings.json?limit=100": {
+  "file": "api_jolpi_ca_ergast_f1_2026_13_constructorStandings_json_limit_100.json",
+  "kind": "json"
+ },
+ "https://api.jolpi.ca/ergast/f1/2026/13/driverStandings.json?limit=100": {
+  "file": "api_jolpi_ca_ergast_f1_2026_13_driverStandings_json_limit_100.json",
+  "kind": "json"
+ },
+ "https://api.jolpi.ca/ergast/f1/2026/14/constructorStandings.json?limit=100": {
+  "file": "api_jolpi_ca_ergast_f1_2026_14_constructorStandings_json_limit_100.json",
+  "kind": "json"
+ },
+ "https://api.jolpi.ca/ergast/f1/2026/14/driverStandings.json?limit=100": {
+  "file": "api_jolpi_ca_ergast_f1_2026_14_driverStandings_json_limit_100.json",
+  "kind": "json"
+ },
+ "https://api.jolpi.ca/ergast/f1/2026/15/constructorStandings.json?limit=100": {
+  "file": "api_jolpi_ca_ergast_f1_2026_15_constructorStandings_json_limit_100.json",
+  "kind": "json"
+ },
+ "https://api.jolpi.ca/ergast/f1/2026/15/driverStandings.json?limit=100": {
+  "file": "api_jolpi_ca_ergast_f1_2026_15_driverStandings_json_limit_100.json",
+  "kind": "json"
+ },
+ "https://api.jolpi.ca/ergast/f1/2026/16/constructorStandings.json?limit=100": {
+  "file": "api_jolpi_ca_ergast_f1_2026_16_constructorStandings_json_limit_100.json",
+  "kind": "json"
+ },
+ "https://api.jolpi.ca/ergast/f1/2026/16/driverStandings.json?limit=100": {
+  "file": "api_jolpi_ca_ergast_f1_2026_16_driverStandings_json_limit_100.json",
+  "kind": "json"
+ },
+ "https://api.jolpi.ca/ergast/f1/2026/17/constructorStandings.json?limit=100": {
+  "file": "api_jolpi_ca_ergast_f1_2026_17_constructorStandings_json_limit_100.json",
+  "kind": "json"
+ },
+ "https://api.jolpi.ca/ergast/f1/2026/17/driverStandings.json?limit=100": {
+  "file": "api_jolpi_ca_ergast_f1_2026_17_driverStandings_json_limit_100.json",
+  "kind": "json"
+ },
+ "https://api.jolpi.ca/ergast/f1/2026/18/constructorStandings.json?limit=100": {
+  "file": "api_jolpi_ca_ergast_f1_2026_18_constructorStandings_json_limit_100.json",
+  "kind": "json"
+ },
+ "https://api.jolpi.ca/ergast/f1/2026/18/driverStandings.json?limit=100": {
+  "file": "api_jolpi_ca_ergast_f1_2026_18_driverStandings_json_limit_100.json",
+  "kind": "json"
+ },
+ "https://api.jolpi.ca/ergast/f1/2026/19/constructorStandings.json?limit=100": {
+  "file": "api_jolpi_ca_ergast_f1_2026_19_constructorStandings_json_limit_100.json",
+  "kind": "json"
+ },
+ "https://api.jolpi.ca/ergast/f1/2026/19/driverStandings.json?limit=100": {
+  "file": "api_jolpi_ca_ergast_f1_2026_19_driverStandings_json_limit_100.json",
+  "kind": "json"
+ },
+ "https://api.jolpi.ca/ergast/f1/2026/2/constructorStandings.json?limit=100": {
+  "file": "api_jolpi_ca_ergast_f1_2026_2_constructorStandings_json_limit_100.json",
+  "kind": "json"
+ },
+ "https://api.jolpi.ca/ergast/f1/2026/2/driverStandings.json?limit=100": {
+  "file": "api_jolpi_ca_ergast_f1_2026_2_driverStandings_json_limit_100.json",
+  "kind": "json"
+ },
+ "https://api.jolpi.ca/ergast/f1/2026/20/constructorStandings.json?limit=100": {
+  "file": "api_jolpi_ca_ergast_f1_2026_20_constructorStandings_json_limit_100.json",
+  "kind": "json"
+ },
+ "https://api.jolpi.ca/ergast/f1/2026/20/driverStandings.json?limit=100": {
+  "file": "api_jolpi_ca_ergast_f1_2026_20_driverStandings_json_limit_100.json",
+  "kind": "json"
+ },
+ "https://api.jolpi.ca/ergast/f1/2026/3/constructorStandings.json?limit=100": {
+  "file": "api_jolpi_ca_ergast_f1_2026_3_constructorStandings_json_limit_100.json",
+  "kind": "json"
+ },
+ "https://api.jolpi.ca/ergast/f1/2026/3/driverStandings.json?limit=100": {
+  "file": "api_jolpi_ca_ergast_f1_2026_3_driverStandings_json_limit_100.json",
+  "kind": "json"
+ },
+ "https://api.jolpi.ca/ergast/f1/2026/4/constructorStandings.json?limit=100": {
+  "file": "api_jolpi_ca_ergast_f1_2026_4_constructorStandings_json_limit_100.json",
+  "kind": "json"
+ },
+ "https://api.jolpi.ca/ergast/f1/2026/4/driverStandings.json?limit=100": {
+  "file": "api_jolpi_ca_ergast_f1_2026_4_driverStandings_json_limit_100.json",
+  "kind": "json"
+ },
+ "https://api.jolpi.ca/ergast/f1/2026/5/constructorStandings.json?limit=100": {
+  "file": "api_jolpi_ca_ergast_f1_2026_5_constructorStandings_json_limit_100.json",
+  "kind": "json"
+ },
+ "https://api.jolpi.ca/ergast/f1/2026/5/driverStandings.json?limit=100": {
+  "file": "api_jolpi_ca_ergast_f1_2026_5_driverStandings_json_limit_100.json",
+  "kind": "json"
+ },
+ "https://api.jolpi.ca/ergast/f1/2026/6/constructorStandings.json?limit=100": {
+  "file": "api_jolpi_ca_ergast_f1_2026_6_constructorStandings_json_limit_100.json",
+  "kind": "json"
+ },
+ "https://api.jolpi.ca/ergast/f1/2026/6/driverStandings.json?limit=100": {
+  "file": "api_jolpi_ca_ergast_f1_2026_6_driverStandings_json_limit_100.json",
+  "kind": "json"
+ },
+ "https://api.jolpi.ca/ergast/f1/2026/7/constructorStandings.json?limit=100": {
+  "file": "api_jolpi_ca_ergast_f1_2026_7_constructorStandings_json_limit_100.json",
+  "kind": "json"
+ },
+ "https://api.jolpi.ca/ergast/f1/2026/7/driverStandings.json?limit=100": {
+  "file": "api_jolpi_ca_ergast_f1_2026_7_driverStandings_json_limit_100.json",
+  "kind": "json"
+ },
+ "https://api.jolpi.ca/ergast/f1/2026/8/constructorStandings.json?limit=100": {
+  "file": "api_jolpi_ca_ergast_f1_2026_8_constructorStandings_json_limit_100.json",
+  "kind": "json"
+ },
+ "https://api.jolpi.ca/ergast/f1/2026/8/driverStandings.json?limit=100": {
+  "file": "api_jolpi_ca_ergast_f1_2026_8_driverStandings_json_limit_100.json",
+  "kind": "json"
+ },
+ "https://api.jolpi.ca/ergast/f1/2026/9/constructorStandings.json?limit=100": {
+  "file": "api_jolpi_ca_ergast_f1_2026_9_constructorStandings_json_limit_100.json",
+  "kind": "json"
+ },
+ "https://api.jolpi.ca/ergast/f1/2026/9/driverStandings.json?limit=100": {
+  "file": "api_jolpi_ca_ergast_f1_2026_9_driverStandings_json_limit_100.json",
+  "kind": "json"
+ },
+ "https://api.jolpi.ca/ergast/f1/2026/qualifying.json?limit=100&offset=0": {
+  "file": "api_jolpi_ca_ergast_f1_2026_qualifying_json_limit_100_offset_0.json",
+  "kind": "json"
+ },
+ "https://api.jolpi.ca/ergast/f1/2026/qualifying.json?limit=100&offset=100": {
+  "file": "api_jolpi_ca_ergast_f1_2026_qualifying_json_limit_100_offset_100.json",
+  "kind": "json"
+ },
+ "https://api.jolpi.ca/ergast/f1/2026/qualifying.json?limit=100&offset=200": {
+  "file": "api_jolpi_ca_ergast_f1_2026_qualifying_json_limit_100_offset_200.json",
+  "kind": "json"
+ },
+ "https://api.jolpi.ca/ergast/f1/2026/qualifying.json?limit=100&offset=300": {
+  "file": "api_jolpi_ca_ergast_f1_2026_qualifying_json_limit_100_offset_300.json",
+  "kind": "json"
+ },
+ "https://api.jolpi.ca/ergast/f1/2026/qualifying.json?limit=100&offset=400": {
+  "file": "api_jolpi_ca_ergast_f1_2026_qualifying_json_limit_100_offset_400.json",
+  "kind": "json"
+ },
+ "https://api.jolpi.ca/ergast/f1/2026/results.json?limit=100&offset=0": {
+  "file": "api_jolpi_ca_ergast_f1_2026_results_json_limit_100_offset_0.json",
+  "kind": "json"
+ },
+ "https://api.jolpi.ca/ergast/f1/2026/results.json?limit=100&offset=100": {
+  "file": "api_jolpi_ca_ergast_f1_2026_results_json_limit_100_offset_100.json",
+  "kind": "json"
+ },
+ "https://api.jolpi.ca/ergast/f1/2026/results.json?limit=100&offset=200": {
+  "file": "api_jolpi_ca_ergast_f1_2026_results_json_limit_100_offset_200.json",
+  "kind": "json"
+ },
+ "https://api.jolpi.ca/ergast/f1/2026/results.json?limit=100&offset=300": {
+  "file": "api_jolpi_ca_ergast_f1_2026_results_json_limit_100_offset_300.json",
+  "kind": "json"
+ },
+ "https://api.jolpi.ca/ergast/f1/2026/results.json?limit=100&offset=400": {
+  "file": "api_jolpi_ca_ergast_f1_2026_results_json_limit_100_offset_400.json",
+  "kind": "json"
+ },
+ "https://api.jolpi.ca/ergast/f1/2026/sprint.json?limit=100&offset=0": {
+  "file": "api_jolpi_ca_ergast_f1_2026_sprint_json_limit_100_offset_0.json",
+  "kind": "json"
+ },
+ "https://api.jolpi.ca/ergast/f1/2026/sprint.json?limit=100&offset=100": {
+  "file": "api_jolpi_ca_ergast_f1_2026_sprint_json_limit_100_offset_100.json",
+  "kind": "json"
+ },
+ "https://api.multiviewer.app/api/v1/circuits/14/2026": {
+  "file": "api_multiviewer_app_api_v1_circuits_14_2026.json",
+  "kind": "json"
+ },
+ "https://api.multiviewer.app/api/v1/circuits/61/2026": {
+  "file": "api_multiviewer_app_api_v1_circuits_61_2026.json",
+  "kind": "json"
+ },
+ "https://api.openf1.org/v1/drivers?session_key=11378": {
+  "file": "api_openf1_org_v1_drivers_session_key_11378.json",
+  "kind": "json"
+ },
+ "https://api.openf1.org/v1/drivers?session_key=11379": {
+  "file": "api_openf1_org_v1_drivers_session_key_11379.json",
+  "kind": "json"
+ },
+ "https://api.openf1.org/v1/drivers?session_key=11383": {
+  "file": "api_openf1_org_v1_drivers_session_key_11383.json",
+  "kind": "json"
+ },
+ "https://api.openf1.org/v1/drivers?session_key=11384": {
+  "file": "api_openf1_org_v1_drivers_session_key_11384.json",
+  "kind": "json"
+ },
+ "https://api.openf1.org/v1/drivers?session_key=11388": {
+  "file": "api_openf1_org_v1_drivers_session_key_11388.json",
+  "kind": "json"
+ },
+ "https://api.openf1.org/v1/drivers?session_key=11405": {
+  "file": "api_openf1_org_v1_drivers_session_key_11405.json",
+  "kind": "json"
+ },
+ "https://api.openf1.org/v1/drivers?session_key=11406": {
+  "file": "api_openf1_org_v1_drivers_session_key_11406.json",
+  "kind": "json"
+ },
+ "https://api.openf1.org/v1/drivers?session_key=11407": {
+  "file": "api_openf1_org_v1_drivers_session_key_11407.json",
+  "kind": "json"
+ },
+ "https://api.openf1.org/v1/drivers?session_key=11408": {
+  "file": "api_openf1_org_v1_drivers_session_key_11408.json",
+  "kind": "json"
+ },
+ "https://api.openf1.org/v1/drivers?session_key=11412": {
+  "file": "api_openf1_org_v1_drivers_session_key_11412.json",
+  "kind": "json"
+ },
+ "https://api.openf1.org/v1/intervals?session_key=11383": {
+  "file": "api_openf1_org_v1_intervals_session_key_11383.json.gz",
+  "kind": "json"
+ },
+ "https://api.openf1.org/v1/intervals?session_key=11388": {
+  "file": "api_openf1_org_v1_intervals_session_key_11388.json.gz",
+  "kind": "json"
+ },
+ "https://api.openf1.org/v1/intervals?session_key=11412": {
+  "file": "api_openf1_org_v1_intervals_session_key_11412.json.gz",
+  "kind": "json"
+ },
+ "https://api.openf1.org/v1/laps?session_key=11378": {
+  "file": "api_openf1_org_v1_laps_session_key_11378.json",
+  "kind": "json"
+ },
+ "https://api.openf1.org/v1/laps?session_key=11379": {
+  "file": "api_openf1_org_v1_laps_session_key_11379.json",
+  "kind": "json"
+ },
+ "https://api.openf1.org/v1/laps?session_key=11383": {
+  "file": "api_openf1_org_v1_laps_session_key_11383.json",
+  "kind": "json"
+ },
+ "https://api.openf1.org/v1/laps?session_key=11384": {
+  "file": "api_openf1_org_v1_laps_session_key_11384.json",
+  "kind": "json"
+ },
+ "https://api.openf1.org/v1/laps?session_key=11388": {
+  "file": "api_openf1_org_v1_laps_session_key_11388.json.gz",
+  "kind": "json"
+ },
+ "https://api.openf1.org/v1/laps?session_key=11405": {
+  "file": "api_openf1_org_v1_laps_session_key_11405.json",
+  "kind": "json"
+ },
+ "https://api.openf1.org/v1/laps?session_key=11406": {
+  "file": "api_openf1_org_v1_laps_session_key_11406.json",
+  "kind": "json"
+ },
+ "https://api.openf1.org/v1/laps?session_key=11407": {
+  "file": "api_openf1_org_v1_laps_session_key_11407.json",
+  "kind": "json"
+ },
+ "https://api.openf1.org/v1/laps?session_key=11408": {
+  "file": "api_openf1_org_v1_laps_session_key_11408.json",
+  "kind": "json"
+ },
+ "https://api.openf1.org/v1/laps?session_key=11412": {
+  "file": "api_openf1_org_v1_laps_session_key_11412.json.gz",
+  "kind": "json"
+ },
+ "https://api.openf1.org/v1/location?date%3C=2026-11-08T18%3A01%3A30&date%3E=2026-11-08T18%3A00%3A00&driver_number=1&session_key=11412": {
+  "file": "api_openf1_org_v1_location_date_3C_2026_11_08T18_3A01_3A30_date_3E_2026_11_08T18_3A00_3A00_driver_number_1_session_key_11412.json",
+  "kind": "json"
+ },
+ "https://api.openf1.org/v1/meetings?year=2026": {
+  "file": "api_openf1_org_v1_meetings_year_2026.json",
+  "kind": "json"
+ },
+ "https://api.openf1.org/v1/overtakes?session_key=11383": {
+  "file": "api_openf1_org_v1_overtakes_session_key_11383.json",
+  "kind": "json"
+ },
+ "https://api.openf1.org/v1/overtakes?session_key=11388": {
+  "file": "api_openf1_org_v1_overtakes_session_key_11388.json",
+  "kind": "json"
+ },
+ "https://api.openf1.org/v1/overtakes?session_key=11412": {
+  "file": "api_openf1_org_v1_overtakes_session_key_11412.json",
+  "kind": "json"
+ },
+ "https://api.openf1.org/v1/pit?session_key=11383": {
+  "file": "api_openf1_org_v1_pit_session_key_11383.json",
+  "kind": "json"
+ },
+ "https://api.openf1.org/v1/pit?session_key=11388": {
+  "file": "api_openf1_org_v1_pit_session_key_11388.json",
+  "kind": "json"
+ },
+ "https://api.openf1.org/v1/pit?session_key=11412": {
+  "file": "api_openf1_org_v1_pit_session_key_11412.json",
+  "kind": "json"
+ },
+ "https://api.openf1.org/v1/position?session_key=11383": {
+  "file": "api_openf1_org_v1_position_session_key_11383.json",
+  "kind": "json"
+ },
+ "https://api.openf1.org/v1/position?session_key=11388": {
+  "file": "api_openf1_org_v1_position_session_key_11388.json",
+  "kind": "json"
+ },
+ "https://api.openf1.org/v1/position?session_key=11412": {
+  "file": "api_openf1_org_v1_position_session_key_11412.json",
+  "kind": "json"
+ },
+ "https://api.openf1.org/v1/race_control?session_key=11378": {
+  "file": "api_openf1_org_v1_race_control_session_key_11378.json",
+  "kind": "json"
+ },
+ "https://api.openf1.org/v1/race_control?session_key=11379": {
+  "file": "api_openf1_org_v1_race_control_session_key_11379.json",
+  "kind": "json"
+ },
+ "https://api.openf1.org/v1/race_control?session_key=11383": {
+  "file": "api_openf1_org_v1_race_control_session_key_11383.json",
+  "kind": "json"
+ },
+ "https://api.openf1.org/v1/race_control?session_key=11384": {
+  "file": "api_openf1_org_v1_race_control_session_key_11384.json",
+  "kind": "json"
+ },
+ "https://api.openf1.org/v1/race_control?session_key=11388": {
+  "file": "api_openf1_org_v1_race_control_session_key_11388.json",
+  "kind": "json"
+ },
+ "https://api.openf1.org/v1/race_control?session_key=11405": {
+  "file": "api_openf1_org_v1_race_control_session_key_11405.json",
+  "kind": "json"
+ },
+ "https://api.openf1.org/v1/race_control?session_key=11406": {
+  "file": "api_openf1_org_v1_race_control_session_key_11406.json",
+  "kind": "json"
+ },
+ "https://api.openf1.org/v1/race_control?session_key=11407": {
+  "file": "api_openf1_org_v1_race_control_session_key_11407.json",
+  "kind": "json"
+ },
+ "https://api.openf1.org/v1/race_control?session_key=11408": {
+  "file": "api_openf1_org_v1_race_control_session_key_11408.json",
+  "kind": "json"
+ },
+ "https://api.openf1.org/v1/race_control?session_key=11412": {
+  "file": "api_openf1_org_v1_race_control_session_key_11412.json",
+  "kind": "json"
+ },
+ "https://api.openf1.org/v1/session_result?session_key=11378": {
+  "file": "api_openf1_org_v1_session_result_session_key_11378.json",
+  "kind": "json"
+ },
+ "https://api.openf1.org/v1/session_result?session_key=11379": {
+  "file": "api_openf1_org_v1_session_result_session_key_11379.json",
+  "kind": "json"
+ },
+ "https://api.openf1.org/v1/session_result?session_key=11383": {
+  "file": "api_openf1_org_v1_session_result_session_key_11383.json",
+  "kind": "json"
+ },
+ "https://api.openf1.org/v1/session_result?session_key=11384": {
+  "file": "api_openf1_org_v1_session_result_session_key_11384.json",
+  "kind": "json"
+ },
+ "https://api.openf1.org/v1/session_result?session_key=11388": {
+  "file": "api_openf1_org_v1_session_result_session_key_11388.json",
+  "kind": "json"
+ },
+ "https://api.openf1.org/v1/session_result?session_key=11405": {
+  "file": "api_openf1_org_v1_session_result_session_key_11405.json",
+  "kind": "json"
+ },
+ "https://api.openf1.org/v1/session_result?session_key=11406": {
+  "file": "api_openf1_org_v1_session_result_session_key_11406.json",
+  "kind": "json"
+ },
+ "https://api.openf1.org/v1/session_result?session_key=11407": {
+  "file": "api_openf1_org_v1_session_result_session_key_11407.json",
+  "kind": "json"
+ },
+ "https://api.openf1.org/v1/session_result?session_key=11408": {
+  "file": "api_openf1_org_v1_session_result_session_key_11408.json",
+  "kind": "json"
+ },
+ "https://api.openf1.org/v1/session_result?session_key=11412": {
+  "file": "api_openf1_org_v1_session_result_session_key_11412.json",
+  "kind": "json"
+ },
+ "https://api.openf1.org/v1/sessions?year=2026": {
+  "file": "api_openf1_org_v1_sessions_year_2026.json",
+  "kind": "json"
+ },
+ "https://api.openf1.org/v1/starting_grid?meeting_key=1296": {
+  "file": "api_openf1_org_v1_starting_grid_meeting_key_1296.json",
+  "kind": "json"
+ },
+ "https://api.openf1.org/v1/starting_grid?meeting_key=1299": {
+  "file": "api_openf1_org_v1_starting_grid_meeting_key_1299.json",
+  "kind": "json"
+ },
+ "https://api.openf1.org/v1/stints?session_key=11378": {
+  "file": "api_openf1_org_v1_stints_session_key_11378.json",
+  "kind": "json"
+ },
+ "https://api.openf1.org/v1/stints?session_key=11379": {
+  "file": "api_openf1_org_v1_stints_session_key_11379.json",
+  "kind": "json"
+ },
+ "https://api.openf1.org/v1/stints?session_key=11383": {
+  "file": "api_openf1_org_v1_stints_session_key_11383.json",
+  "kind": "json"
+ },
+ "https://api.openf1.org/v1/stints?session_key=11384": {
+  "file": "api_openf1_org_v1_stints_session_key_11384.json",
+  "kind": "json"
+ },
+ "https://api.openf1.org/v1/stints?session_key=11388": {
+  "file": "api_openf1_org_v1_stints_session_key_11388.json",
+  "kind": "json"
+ },
+ "https://api.openf1.org/v1/stints?session_key=11405": {
+  "file": "api_openf1_org_v1_stints_session_key_11405.json",
+  "kind": "json"
+ },
+ "https://api.openf1.org/v1/stints?session_key=11406": {
+  "file": "api_openf1_org_v1_stints_session_key_11406.json",
+  "kind": "json"
+ },
+ "https://api.openf1.org/v1/stints?session_key=11407": {
+  "file": "api_openf1_org_v1_stints_session_key_11407.json",
+  "kind": "json"
+ },
+ "https://api.openf1.org/v1/stints?session_key=11408": {
+  "file": "api_openf1_org_v1_stints_session_key_11408.json",
+  "kind": "json"
+ },
+ "https://api.openf1.org/v1/stints?session_key=11412": {
+  "file": "api_openf1_org_v1_stints_session_key_11412.json",
+  "kind": "json"
+ },
+ "https://api.openf1.org/v1/weather?session_key=11378": {
+  "file": "api_openf1_org_v1_weather_session_key_11378.json",
+  "kind": "json"
+ },
+ "https://api.openf1.org/v1/weather?session_key=11379": {
+  "file": "api_openf1_org_v1_weather_session_key_11379.json",
+  "kind": "json"
+ },
+ "https://api.openf1.org/v1/weather?session_key=11383": {
+  "file": "api_openf1_org_v1_weather_session_key_11383.json",
+  "kind": "json"
+ },
+ "https://api.openf1.org/v1/weather?session_key=11384": {
+  "file": "api_openf1_org_v1_weather_session_key_11384.json",
+  "kind": "json"
+ },
+ "https://api.openf1.org/v1/weather?session_key=11388": {
+  "file": "api_openf1_org_v1_weather_session_key_11388.json",
+  "kind": "json"
+ },
+ "https://api.openf1.org/v1/weather?session_key=11405": {
+  "file": "api_openf1_org_v1_weather_session_key_11405.json",
+  "kind": "json"
+ },
+ "https://api.openf1.org/v1/weather?session_key=11406": {
+  "file": "api_openf1_org_v1_weather_session_key_11406.json",
+  "kind": "json"
+ },
+ "https://api.openf1.org/v1/weather?session_key=11407": {
+  "file": "api_openf1_org_v1_weather_session_key_11407.json",
+  "kind": "json"
+ },
+ "https://api.openf1.org/v1/weather?session_key=11408": {
+  "file": "api_openf1_org_v1_weather_session_key_11408.json",
+  "kind": "json"
+ },
+ "https://api.openf1.org/v1/weather?session_key=11412": {
+  "file": "api_openf1_org_v1_weather_session_key_11412.json",
+  "kind": "json"
+ },
+ "https://github.com/f1db/f1db/releases/download/v2026.20.0/f1db-json-single.zip": {
+  "file": "github_com_f1db_f1db_releases_download_v2026_20_0_f1db_json_single_zip.json",
+  "kind": "zip"
+ }
+}
