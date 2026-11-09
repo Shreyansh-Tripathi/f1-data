@@ -88,6 +88,23 @@ uv run pytest
 uv run f1data build --year 2026
 ```
 
+## CI and publishing
+
+- `.github/workflows/ci.yml`: on push to `main` and on PRs, runs `uv sync --locked`, `ruff check`, `ruff format --check` and `pytest`. Tests are offline: they replay `tests/fixtures/http/` through `httpx.MockTransport`. No fixture may exceed 5 MB (enforced by `tests/test_fixture_sizes.py`).
+- `.github/workflows/build.yml`:
+  - **Schedule (UTC):** hourly Fri–Mon (`0 * * * 5,6,0,1`), every 6 h Tue–Thu (`0 */6 * * 2-4`).
+  - **Manual runs:** `workflow_dispatch` with inputs `year`, `round`, `session`, `force`.
+  - **Settings:** `permissions: contents: write`; concurrency group `build-data` without cancel-in-progress (runs queue); 60 min timeout.
+  - **Steps:**
+    1. Check out `gh-pages` into `site/`.
+    2. Restore `.cache/` with `actions/cache`.
+    3. `uv sync --locked`.
+    4. `f1data build`. If it fails, the steps continue and the job fails at the end.
+    5. Publish, but only if `site/v1/manifest.json` changed: write `site/.nojekyll`, build an orphan commit from `site/` with a temporary index, and force-push it to `gh-pages`. The branch always holds one squashed commit.
+  - All actions are pinned to commit SHAs, with the exact version in a comment.
+- `.github/dependabot.yml`: weekly updates for GitHub Actions and Python. Python uses the `uv` ecosystem so `uv.lock` is updated together with `pyproject.toml`.
+- Pages must be configured to serve the `gh-pages` branch root. The data URL is `https://shreyansh-tripathi.github.io/f1-data/v1/`.
+
 ## Working style
 
 - Plan before multi-file changes; keep diffs small; one concern per commit.
