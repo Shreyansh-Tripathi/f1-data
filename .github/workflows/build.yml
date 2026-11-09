@@ -1,0 +1,68 @@
+name: build
+
+on:
+  schedule:
+    - cron: "17 6 * * *" # daily; sessions become final 72 h after they end
+  workflow_dispatch:
+    inputs:
+      year:
+        description: Season to build (default: current UTC year)
+        required: false
+      force:
+        description: Rebuild sessions even if complete
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      # Runs start cold: restore previously published output so complete sessions are skipped.
+      - name: Restore published output from gh-pages
+        run: |
+          mkdir -p site
+          if git ls-remote --exit-code --heads origin gh-pages > /dev/null; then
+            git fetch --depth 1 origin gh-pages
+            git archive origin/gh-pages | tar -x -C site
+          fi
+
+      - name: Restore HTTP cache
+        uses: actions/cache@v4
+        with:
+          path: .cache
+          key: f1data-cache-${{ github.run_id }}
+          restore-keys: f1data-cache-
+
+      - uses: astral-sh/setup-uv@v5
+
+      - run: uv sync --frozen
+
+      - name: Test
+        run: uv run pytest
+
+      - name: Build
+        run: |
+          YEAR="${{ inputs.year }}"
+          FORCE="${{ inputs.force && '--force' || '' }}"
+          uv run f1data build --year "${YEAR:-$(date -u +%Y)}" $FORCE
+
+      # Publish whatever validated files were written, even if some sessions failed.
+      - name: Publish to gh-pages
+        if: ${{ !cancelled() }}
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./site
+          keep_files: true
+          enable_jekyll: false
+          commit_message: "data: ${{ github.event_name }} ${{ github.run_id }}"
