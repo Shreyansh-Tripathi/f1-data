@@ -115,7 +115,7 @@ uv run f1data build --year 2026
 ## Status
 
 - [x] Phase 0 — verify sources (see Findings)
-- [ ] Phase 1 — pipeline + Actions + Pages
+- [x] Phase 1 — pipeline + Actions + Pages
 - [ ] Phase 5 — replay builder
 - [ ] Phase 6 — radio + local whisper.cpp transcription
 
