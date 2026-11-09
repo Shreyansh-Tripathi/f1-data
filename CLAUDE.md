@@ -52,7 +52,7 @@ Session codes: `fp1 fp2 fp3 sq sprint q race`. `summary.json` has a distinct sha
 
 - **Cache finality.** A session's data and its round's Jolpica data are cached permanently only once the session ended at least 72 h ago **and** Jolpica has the round. Before that: 1 h TTL, and outputs are written with `provisional: true`.
 - **Matching.** Jolpica owns round numbers. Match each round to the OpenF1 meeting whose race date is within ±1 day; cancelled OpenF1 meetings are skipped.
-- **Classification.** DNF/DNS/DSQ come from Jolpica `positionText` (`R` = DNF, `W`/`N`/`F` = DNS, `D`/`E` = DSQ), cross-checked with OpenF1 `dnf`/`dns`/`dsq`. Never parse `status` strings.
+- **Classification.** DNF/DNS/DSQ come from Jolpica `positionText` (`R`/`N` = DNF, `W`/`F` = DNS, `D`/`E` = DSQ; `N` is "not classified", i.e. ran but did not finish), cross-checked with OpenF1 `dnf`/`dns`/`dsq`. Never parse `status` strings.
 - **Grid and fastest lap** come from Jolpica results (`grid`, `FastestLap.rank == "1"`). OpenF1 `starting_grid` is only a fallback.
 - **Gaps.** `gapMs` is an integer on the lead lap. For lapped cars `gapMs` is null and `lapsBehind` is an integer (OpenF1 sends `"+1 LAP"` / `"+2 LAPS"`).
 - **Laps.** `laps.json` carries per-lap `pos` and `gapMs`/`lapsBehind`, from `position` and `intervals` reduced to the last value at or before each lap's end.
