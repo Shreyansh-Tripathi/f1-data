@@ -2,12 +2,23 @@ name: build
 
 on:
   schedule:
-    - cron: "17 6 * * *" # daily; sessions become final 72 h after they end
+    - cron: "0 * * * 5,6,0,1" # hourly Fri–Mon (race weekends, Monday catch-up), UTC
+    - cron: "0 */6 * * 2-4" # every 6 h Tue–Thu
   workflow_dispatch:
     inputs:
       year:
-        description: Season to build (default: current UTC year)
+        description: Season (default current UTC year)
+        type: string
         required: false
+      round:
+        description: Only this round (default all)
+        type: string
+        required: false
+      session:
+        description: Only this session
+        type: choice
+        options: [all, fp1, fp2, fp3, sq, sprint, q, race]
+        default: all
       force:
         description: Rebuild sessions even if complete
         type: boolean
@@ -17,52 +28,84 @@ permissions:
   contents: write
 
 concurrency:
-  group: build
+  group: build-data
   cancel-in-progress: false
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      # Runs start cold: restore previously published output so complete sessions are skipped.
-      - name: Restore published output from gh-pages
+      # Runs start cold: restore the published tree so complete sessions are skipped.
+      - name: Check out gh-pages into site/
+        id: pages
         run: |
           mkdir -p site
-          if git ls-remote --exit-code --heads origin gh-pages > /dev/null; then
-            git fetch --depth 1 origin gh-pages
-            git archive origin/gh-pages | tar -x -C site
+          if git fetch --depth 1 origin gh-pages; then
+            git archive FETCH_HEAD | tar -x -C site
+          fi
+          if [ -f site/v1/manifest.json ]; then
+            echo "manifest=$(sha256sum site/v1/manifest.json | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Restore HTTP cache
-        uses: actions/cache@v4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .cache
-          key: f1data-cache-${{ github.run_id }}
-          restore-keys: f1data-cache-
+          key: f1data-http-${{ github.run_id }}
+          restore-keys: f1data-http-
 
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
 
-      - run: uv sync --frozen
-
-      - name: Test
-        run: uv run pytest
+      - run: uv sync --locked
 
       - name: Build
+        id: build
+        continue-on-error: true # publish whatever validated files were written; fail the job afterwards
+        env:
+          YEAR: ${{ inputs.year }}
+          ROUND: ${{ inputs.round }}
+          SESSION: ${{ inputs.session }}
+          FORCE: ${{ inputs.force }}
         run: |
-          YEAR="${{ inputs.year }}"
-          FORCE="${{ inputs.force && '--force' || '' }}"
-          uv run f1data build --year "${YEAR:-$(date -u +%Y)}" $FORCE
+          YEAR="${YEAR:-$(date -u +%Y)}"
+          [[ "$YEAR" =~ ^[0-9]{4}$ ]] || { echo "bad year: $YEAR"; exit 2; }
+          args=(--year "$YEAR")
+          if [ -n "$ROUND" ]; then
+            [[ "$ROUND" =~ ^[0-9]+$ ]] || { echo "bad round: $ROUND"; exit 2; }
+            args+=(--round "$ROUND")
+          fi
+          if [ -n "$SESSION" ] && [ "$SESSION" != all ]; then args+=(--session "$SESSION"); fi
+          if [ "$FORCE" = true ]; then args+=(--force); fi
+          uv run f1data build "${args[@]}"
 
-      # Publish whatever validated files were written, even if some sessions failed.
+      # gh-pages holds a single squashed commit: build an orphan commit from site/ and force-push it,
+      # but only when manifest.json changed.
       - name: Publish to gh-pages
-        if: ${{ !cancelled() }}
-        uses: peaceiris/actions-gh-pages@v4
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./site
-          keep_files: true
-          enable_jekyll: false
-          commit_message: "data: ${{ github.event_name }} ${{ github.run_id }}"
+        env:
+          BEFORE: ${{ steps.pages.outputs.manifest }}
+        run: |
+          if [ ! -f site/v1/manifest.json ]; then
+            echo "no manifest written; nothing to publish"
+            exit 0
+          fi
+          AFTER=$(sha256sum site/v1/manifest.json | cut -d' ' -f1)
+          if [ "$AFTER" = "$BEFORE" ]; then
+            echo "manifest.json unchanged; nothing to publish"
+            exit 0
+          fi
+          touch site/.nojekyll
+          export GIT_INDEX_FILE="$RUNNER_TEMP/gh-pages.index"
+          git --work-tree=site add -A .
+          tree=$(git write-tree)
+          commit=$(git -c user.name="github-actions[bot]" \
+            -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit-tree "$tree" -m "data: $(date -u +%Y-%m-%dT%H:%M:%SZ) (run $GITHUB_RUN_ID)")
+          git push --force origin "$commit:refs/heads/gh-pages"
+          echo "published $commit"
+
+      - name: Fail if the build had errors
+        if: steps.build.outcome == 'failure'
+        run: exit 1
