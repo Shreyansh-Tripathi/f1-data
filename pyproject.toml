@@ -16,7 +16,6 @@ f1data = "f1data.cli:main"
 [dependency-groups]
 dev = [
     "pytest>=8.3",
-    "respx>=0.22",
     "ruff>=0.8",
 ]
 
