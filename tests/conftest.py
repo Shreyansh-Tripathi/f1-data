@@ -46,7 +46,41 @@ def load(url: str, params: dict[str, Any] | None = None) -> Any:
     return json.loads(_read(_index()[full_url(url, params)]["file"]))
 
 
+def fixture_client(cache_dir: Path) -> HttpClient:
+    """HttpClient that serves recorded fixtures, never touching the network or sleeping."""
+    return HttpClient(cache_dir, transport=httpx.MockTransport(_respond), sleep=lambda s: None)
+
+
 @pytest.fixture
 def client(tmp_path) -> HttpClient:
-    """HttpClient that serves recorded fixtures, never touching the network or sleeping."""
-    return HttpClient(tmp_path, transport=httpx.MockTransport(_respond), sleep=lambda s: None)
+    return fixture_client(tmp_path)
+
+
+@pytest.fixture(scope="session")
+def shared_client(tmp_path_factory) -> HttpClient:
+    """One cached client for read-only builder tests."""
+    return fixture_client(tmp_path_factory.mktemp("cache"))
+
+
+@pytest.fixture(scope="session")
+def season_data(shared_client) -> dict[str, Any]:
+    from f1data.build import ids
+    from f1data.sources import jolpica, openf1
+
+    c = shared_client
+    meetings = openf1.meetings(c, 2026)
+    sessions = openf1.sessions(c, 2026)
+    schedule = jolpica.schedule(c, 2026)
+    results = jolpica.results(c, 2026)
+    qualifying = jolpica.qualifying(c, 2026)
+    sprint = jolpica.sprint(c, 2026)
+    return {
+        "meetings": meetings,
+        "sessions": sessions,
+        "schedule": schedule,
+        "results": results,
+        "qualifying": qualifying,
+        "sprint": sprint,
+        "weekends": ids.match_weekends(schedule, meetings, sessions),
+        "known": ids.season_drivers(results, qualifying, sprint),
+    }

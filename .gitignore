@@ -2,3 +2,7 @@
 __pycache__/
 .venv/
 site/
+*.zip
+.env
+.pytest_cache/
+.ruff_cache/
