@@ -150,7 +150,7 @@ def build_qualifying_summary(
             QualifyingEntry(
                 driver_id=idmap.drivers[r["driver_number"]],
                 team_id=idmap.teams[r["driver_number"]],
-                position=r.get("position"),
+                position=_position(r),
                 best_ms=min((t for t in times if t is not None), default=None),
                 eliminated_in=knockout if knockout and knockout != last else None,
             )
@@ -176,7 +176,7 @@ def build_practice_summary(
             PracticeEntry(
                 driver_id=idmap.drivers[n],
                 team_id=idmap.teams[n],
-                position=r["position"],
+                position=_position(r),
                 best_lap_ms=ms(b["lap_duration"]) if b else ms(r.get("duration")),
                 best_lap_number=b["lap_number"] if b else None,
                 laps=r.get("number_of_laps") or count.get(n, 0),
@@ -336,7 +336,7 @@ def build_quali(meta: SessionMeta, openf1_results: Rows, idmap: IdMap, jolpica_r
             QualiDriver(
                 driver_id=idmap.drivers[r["driver_number"]],
                 team_id=idmap.teams[r["driver_number"]],
-                position=r.get("position"),
+                position=_position(r),
                 q1_ms=q1,
                 q2_ms=q2,
                 q3_ms=q3,
@@ -412,8 +412,14 @@ def build_overtakes(meta: SessionMeta, rows: Rows, idmap: IdMap) -> Overtakes:
 # ---------------------------------------------------------------- helpers
 
 
-def _position_key(r: dict[str, Any]) -> tuple[int, int]:
+def _position(r: dict[str, Any]) -> int | None:
+    """OpenF1 positions are ints, but non-classified entries can carry codes such as "RT"."""
     p = r.get("position")
+    return p if isinstance(p, int) else None
+
+
+def _position_key(r: dict[str, Any]) -> tuple[int, int]:
+    p = _position(r)
     return (0, p) if p is not None else (1, r["driver_number"])
 
 

@@ -225,3 +225,22 @@ def test_sprint_weekend(season_data, shared_client):
     q = build_quali(meta("sq", weekend.round), openf1.session_result(c, sk_sq), sq_idmap)
     assert q.segments == 3
     assert sum(q.eliminated.values()) + sum(d.knockout == "q3" for d in q.drivers) <= len(q.drivers)
+
+
+def test_quali_tolerates_non_numeric_openf1_position(season_data, shared_client):
+    # Singapore 2026 qualifying: OpenF1 reports Hadjar (car 6) with position "RT" and no times.
+    c = shared_client
+    weekend = next(w for w in season_data["weekends"] if w.meeting_key == 1296)
+    sk = weekend.sessions["q"]["session_key"]
+    rnd = str(weekend.round)
+    entries = ids.round_entries(next(r for r in season_data["results"] if r["round"] == rnd))
+    idmap = ids.session_ids(openf1.drivers(c, sk), entries, season_data["known"])
+    results = openf1.session_result(c, sk)
+    assert any(r["position"] == "RT" for r in results)
+    jq = next(r for r in season_data["qualifying"] if r["round"] == rnd)["QualifyingResults"]
+    summary = build_qualifying_summary(meta("q", weekend.round), results, openf1.weather(c, sk), idmap, jq)
+    hadjar = next(e for e in summary.results if e.driver_id == idmap.driver(6))
+    assert hadjar.position is None and hadjar.best_ms is None
+    assert summary.results[-1].driver_id == hadjar.driver_id  # unclassified entries sort last
+    q = build_quali(meta("q", weekend.round), results, idmap, jq)
+    assert next(d for d in q.drivers if d.driver_id == hadjar.driver_id).position is None

@@ -68,7 +68,7 @@ class QualifyingSummary(SessionFile):
 class PracticeEntry(Model):
     driver_id: str
     team_id: str
-    position: int
+    position: int | None
     best_lap_ms: int | None
     best_lap_number: int | None
     laps: int
