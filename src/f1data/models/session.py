@@ -147,6 +147,7 @@ class Penalty(Model):
     driver: str
     kind: Literal["time", "driveThrough", "stopGo", "grid"]
     seconds: int | None  # seconds for time penalties, places for grid penalties
+    reason: str | None  # stewards' wording, e.g. "REJOINING UNSAFELY"
 
 
 class RaceControlMessage(Model):

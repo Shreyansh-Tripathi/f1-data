@@ -285,12 +285,30 @@ def build_strategy(meta: SessionMeta, stints: Rows, pit: Rows, idmap: IdMap) -> 
 
 PENALTY_PATTERNS = [
     (re.compile(r"(\d+) SECOND TIME PENALTY FOR CAR (\d+)"), "time"),
-    (re.compile(r"(\d+) SECOND STOP[/ ]?(?:AND )?GO PENALTY FOR CAR (\d+)"), "stopGo"),
-    (re.compile(r"()STOP[/ ]?(?:AND )?GO PENALTY FOR CAR (\d+)"), "stopGo"),
+    (re.compile(r"(\d+) SECOND STOP[-/ ]?(?:AND[- ])?GO PENALTY FOR CAR (\d+)"), "stopGo"),
+    (re.compile(r"()STOP[-/ ]?(?:AND[- ])?GO PENALTY FOR CAR (\d+)"), "stopGo"),
     (re.compile(r"()DRIVE[ -]THROUGH PENALTY FOR CAR (\d+)"), "driveThrough"),
     (re.compile(r"(\d+) PLACE GRID PENALTY FOR CAR (\d+)"), "grid"),
 ]
 NOT_ISSUED = ("PENALTY SERVED", "WITHDRAWN", "REVOKED")
+# "... FOR CAR 23 (ALB) - REJOINING UNSAFELY (14:50:05)": the reason, without the trailing clock time.
+PENALTY_REASON = re.compile(r"FOR CAR \d+(?: \([A-Z]+\))? - (.+?)(?: \(\d{1,2}:\d{2}:\d{2}\))?$")
+# Kept upper case when sentence-casing reasons, along with driver codes ("(NOR)").
+ACRONYMS = frozenset({"DRS", "VSC", "SC", "DSQ", "DNF", "FIA"})
+_REASON_TOKEN = re.compile(r"\(([A-Z]{3})\)|[A-Za-z0-9']+")
+
+
+def sentence_case(text: str) -> str:
+    """ "TRACK LIMITS (5TH OFFENCE)" -> "Track limits (5th offence)"; acronyms and "(NOR)" stay upper case."""
+
+    def token(m: re.Match[str]) -> str:
+        word = m.group(0)
+        if m.group(1) or word.upper() in ACRONYMS:
+            return word.upper()
+        return word.lower()
+
+    out = _REASON_TOKEN.sub(token, text)
+    return out[:1].upper() + out[1:]
 
 
 def parse_penalty(message: str, idmap: IdMap) -> Penalty | None:
@@ -302,7 +320,13 @@ def parse_penalty(message: str, idmap: IdMap) -> Penalty | None:
             driver = idmap.driver(int(m.group(2)))
             if driver is None:
                 return None
-            return Penalty(driver=driver, kind=kind, seconds=int(m.group(1)) if m.group(1) else None)
+            reason = PENALTY_REASON.search(message)
+            return Penalty(
+                driver=driver,
+                kind=kind,
+                seconds=int(m.group(1)) if m.group(1) else None,
+                reason=sentence_case(reason.group(1).strip()) if reason else None,
+            )
     return None
 
 

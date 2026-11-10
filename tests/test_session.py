@@ -15,6 +15,7 @@ from f1data.build.session import (
     build_strategy,
     clock_ms,
     parse_penalty,
+    sentence_case,
 )
 from f1data.sources import openf1
 
@@ -178,24 +179,77 @@ def test_race_control_penalties(brazil):
     penalties = [(m.penalty.driver, m.penalty.kind, m.penalty.seconds) for m in rc.messages if m.penalty]
     assert (idmap.driver(23), "time", 5) in penalties
     assert (idmap.driver(27), "time", 10) in penalties
+    reasons = {m.penalty.driver: m.penalty.reason for m in rc.messages if m.penalty}
+    assert reasons[idmap.driver(23)] == "Rejoining unsafely"
+    raw = [m.message for m in rc.messages if m.penalty and m.penalty.driver == idmap.driver(23)]
+    assert raw and all("REJOINING UNSAFELY" in m for m in raw)  # raw message unchanged
     served = [m for m in rc.messages if "PENALTY SERVED" in m.message]
     assert served and all(m.penalty is None for m in served)
     assert all(m.message for m in rc.messages)  # raw message kept
 
 
 @pytest.mark.parametrize(
-    ("message", "kind", "seconds"),
+    ("raw", "expected"),
     [
-        ("FIA STEWARDS: DRIVE THROUGH PENALTY FOR CAR 1 (NOR) - SPEEDING IN THE PIT LANE", "driveThrough", None),
-        ("FIA STEWARDS: 10 SECOND STOP/GO PENALTY FOR CAR 1 (NOR) - X", "stopGo", 10),
-        ("FIA STEWARDS: 3 PLACE GRID PENALTY FOR CAR 1 (NOR) - X", "grid", 3),
-        ("FIA STEWARDS: INCIDENT INVOLVING CAR 1 (NOR) UNDER INVESTIGATION", None, None),
+        ("CAUSING A COLLISION", "Causing a collision"),
+        ("VSC INFRINGEMENT", "VSC infringement"),
+        ("SC INFRINGEMENT", "SC infringement"),
+        ("SAFETY CAR INFRINGEMENT", "Safety car infringement"),
+        ("ILLEGAL USE OF DRS", "Illegal use of DRS"),
+        ("FIA INSTRUCTION IGNORED, RISKING DSQ OR DNF", "FIA instruction ignored, risking DSQ or DNF"),
+        ("CAUSING A COLLISION WITH CAR 4 (NOR)", "Causing a collision with car 4 (NOR)"),
+        ("TRACK LIMITS (5TH OFFENCE)", "Track limits (5th offence)"),
+        (
+            "FAILING TO FOLLOW RACE DIRECTORS INSTRUCTIONS \u2013 ESCAPE ROAD INSTRUCTIONS",
+            "Failing to follow race directors instructions \u2013 escape road instructions",
+        ),
+        ("SCRUTINEERING BREACH", "Scrutineering breach"),  # acronyms only as whole words
+        ("DRIVER'S FAULT", "Driver's fault"),
     ],
 )
-def test_parse_penalty_kinds(message, kind, seconds):
+def test_sentence_case_keeps_acronyms_and_driver_codes(raw, expected):
+    assert sentence_case(raw) == expected
+
+
+@pytest.mark.parametrize(
+    ("message", "kind", "seconds", "reason"),
+    [
+        (
+            "FIA STEWARDS: DRIVE THROUGH PENALTY FOR CAR 1 (NOR) - SPEEDING IN THE PIT LANE",
+            "driveThrough",
+            None,
+            "Speeding in the pit lane",
+        ),
+        ("FIA STEWARDS: 10 SECOND STOP/GO PENALTY FOR CAR 1 (NOR) - X", "stopGo", 10, "X"),
+        # Seen live (2026): hyphenated stop-and-go, trailing clock time stripped from the reason.
+        (
+            "FIA STEWARDS: STOP-AND-GO PENALTY FOR CAR 1 (NOR) - YELLOW FLAG INFRINGEMENT (16:47:57)",
+            "stopGo",
+            None,
+            "Yellow flag infringement",
+        ),
+        (
+            "FIA STEWARDS: 5 SECOND TIME PENALTY FOR CAR 1 (NOR) - TRACK LIMITS (5TH OFFENCE)",
+            "time",
+            5,
+            "Track limits (5th offence)",
+        ),
+        (
+            "FIA STEWARDS: 5 SECOND TIME PENALTY FOR CAR 1 (NOR) - FALSE START - MOVING BEFORE SIGNAL (15:03:53)",
+            "time",
+            5,
+            "False start - moving before signal",
+        ),
+        ("FIA STEWARDS: 10 SECOND TIME PENALTY FOR CAR 1 (NOR) (15:04:34)", "time", 10, None),
+        ("FIA STEWARDS: 3 PLACE GRID PENALTY FOR CAR 1 (NOR) - X", "grid", 3, "X"),
+        ("FIA STEWARDS: INCIDENT INVOLVING CAR 1 (NOR) UNDER INVESTIGATION", None, None, None),
+        ("FIA STEWARDS: PENALTY SERVED - STOP-AND-GO PENALTY FOR CAR 1 (NOR) - X", None, None, None),
+    ],
+)
+def test_parse_penalty_kinds(message, kind, seconds, reason):
     idmap = ids.IdMap(drivers={1: "norris"}, teams={1: "mclaren"})
     p = parse_penalty(message, idmap)
-    assert (p.kind, p.seconds) == (kind, seconds) if kind else p is None
+    assert (p.kind, p.seconds, p.reason) == (kind, seconds, reason) if kind else p is None
 
 
 # ---------------------------------------------------------------- sprint weekend (Singapore)
