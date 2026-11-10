@@ -18,7 +18,7 @@ Python pipeline that turns free F1 data sources into versioned static JSON, publ
 | OpenF1 `https://api.openf1.org/v1/` | All session data: sessions, meetings, drivers, session_result, starting_grid, laps, stints, pit, intervals, position, race_control, weather, overtakes, team_radio, location | Historical (2023+) free, no auth. Observed limit ~30 req / min per IP (429 with `Retry-After: 60` above it); client spaces requests 2 s apart. championship_* endpoints are beta. Skip meetings with `is_cancelled`. Query `starting_grid` by `meeting_key` (it is keyed to the qualifying session). Fetch location per driver. Empty result = HTTP 404 `{"detail":"No results found."}`, mapped to `[]` and logged. car_data is not used. |
 | Jolpica `https://api.jolpi.ca/ergast/f1/` | Round numbers (owner), standings (source of record), results, qualifying, sprint, schedule, grid, fastest lap | ~4 req/s, ~200 req/hour. Cache aggressively. Use season-wide paginated `results` / `qualifying` / `sprint` (`limit` + `offset`). Rounds skip cancelled events. |
 | MultiViewer `circuit_info_url` from OpenF1 `meetings` | Circuit outline, corners, rotation | Free, no auth. Only follow URLs under `https://api.multiviewer.app/`. Fetch once per circuit per season, cache permanently. Fallback: outline from OpenF1 `location` (no corners). |
-| F1DB (GitHub releases of `f1db/f1db`) | Career totals (titles, wins, podiums, starts) | Download release asset once per run. Use `f1db-json-single.zip` (6.8 MB, 85 MB unzipped). Filter season entrants to drivers with race starts. |
+| F1DB (GitHub releases of `f1db/f1db`) | Career totals (titles, wins, podiums, starts); fallback for driver code, nationality (country id → demonym via `countries`) and date of birth when Jolpica lacks them | Download release asset once per run. Use `f1db-json-single.zip` (6.8 MB, 85 MB unzipped). Filter season entrants to drivers with race starts. |
 
 Never send auth tokens. Never re-host team radio audio; store only F1's URL.
 
@@ -59,6 +59,7 @@ Session codes: `fp1 fp2 fp3 sq sprint q race`. `summary.json` has a distinct sha
 - **Penalties.** Race-control entries keep the raw `message` and add `penalty: {driver, kind, seconds} | null`, with `kind` one of `time | driveThrough | stopGo | grid`. `seconds` holds seconds for time and stop-go penalties, places for grid penalties, null otherwise. "PENALTY SERVED" and investigation messages have no penalty.
 - **Stats.** Season stats are race-only (`wins, podiums, poles, dnfs, points`), with separate `sprintWins, sprintPodiums, sprintPoles, sprintPoints`.
 - **Standings** keep drivers no longer racing, with `active: false`.
+- **Driver identity.** `drivers.json` takes code, nationality and date of birth from Jolpica, falling back to F1DB per field. Number, colour and headshot come from OpenF1 (latest race session); drivers without OpenF1 data keep Jolpica's race number and have null colour/headshot.
 - **Circuits.** Coordinates stay in the OpenF1 location frame as integers; `rotation` is passed through and applied in the app.
 - **404s.** Every OpenF1 404 mapped to `[]` is logged at WARNING with its URL.
 
@@ -183,3 +184,4 @@ Findings:
 - OpenF1 `session_result.position` can be a string code for unclassified entries (Singapore 2026 Q: `"RT"` for car 6, no times). Treated as `position: null`, sorted last.
 - Jolpica round 16 of 2026 is named "Bahrain Grand Prix in Malaysia" (Kuala Lumpur replacement event); matching by date handles it.
 - OpenF1 `dnf: true` can disagree with Jolpica for classified finishers who stopped in the last laps (Jolpica `positionText` numeric). This is logged as a mismatch; Jolpica wins.
+- Jolpica can lack `code`, `nationality` and `dateOfBirth` for a driver's first race (Rafael Camara, round 20 of 2026, in results, qualifying and `/2026/drivers.json`). F1DB had all three, so they are filled from it.
