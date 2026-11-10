@@ -52,12 +52,16 @@ def save(key: str, body: Any) -> str:
 
 
 def f1db_subset(db: dict[str, Any], ids: set[str], season: dict[str, Any]) -> dict[str, Any]:
-    """The parts of F1DB the builders read: current entrants, this season, countries (for demonyms)."""
+    """The parts of F1DB the builders read: current entrants, this season and its races and grands prix,
+    countries (for demonyms)."""
+    races = [r for r in db["races"] if r["year"] == season["year"]]
+    gp_ids = {r["grandPrixId"] for r in races}
     return {
         "drivers": [d for d in db["drivers"] if d["id"] in ids],
         "seasons": [season],
         "countries": db["countries"],
-        "races": [],
+        "races": races,
+        "grandsPrix": [g for g in db["grandsPrix"] if g["id"] in gp_ids],
     }
 
 

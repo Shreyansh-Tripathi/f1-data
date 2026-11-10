@@ -58,6 +58,7 @@ class Weekend:
     locality: str
     race_start: datetime
     meeting_key: int | None
+    meeting_name: str | None
     circuit_info_url: str | None
     # session code -> OpenF1 session row (empty when no meeting matched)
     sessions: dict[str, dict[str, Any]] = field(default_factory=dict)
@@ -97,6 +98,7 @@ def match_weekends(
                 locality=race["Circuit"]["Location"]["locality"],
                 race_start=start,
                 meeting_key=meeting_key,
+                meeting_name=live[meeting_key].get("meeting_name") if meeting_key else None,
                 circuit_info_url=live[meeting_key].get("circuit_info_url") if meeting_key else None,
                 sessions=by_meeting.get(meeting_key, {}) if meeting_key else {},
                 scheduled=scheduled,

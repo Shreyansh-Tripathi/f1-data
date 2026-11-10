@@ -12,9 +12,15 @@ class SeasonSession(Model):
     end: Utc | None
 
 
+class RoundWinner(Model):
+    driver_id: str
+    team_id: str
+
+
 class Round(Model):
     round: int
     name: str
+    short_name: str
     circuit_id: str
     country: str
     locality: str
@@ -22,6 +28,7 @@ class Round(Model):
     status: Literal["completed", "upcoming"]
     sprint: bool
     sessions: list[SeasonSession]
+    winner: RoundWinner | None
 
 
 class CancelledEvent(Model):

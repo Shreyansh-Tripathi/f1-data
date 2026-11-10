@@ -532,7 +532,7 @@
   "kind": "json"
  },
  "https://github.com/f1db/f1db/releases/download/v2026.20.0/f1db-json-single.zip": {
-  "file": "github_com_f1db_f1db_releases_download_v2026_20_0_f1db_json_single_zip.json",
+  "file": "github_com_f1db_f1db_releases_download_v2026_20_0_f1db_json_single_zip.json.gz",
   "kind": "zip"
  }
 }

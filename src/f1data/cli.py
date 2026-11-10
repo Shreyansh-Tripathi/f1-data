@@ -94,7 +94,8 @@ class Build:
     def build_season(self) -> None:
         cancelled = ids.cancelled_meetings(self.meetings)
         self.write(
-            f"{self.year}/season.json", build_season(self.year, self.weekends, cancelled, self.completed, self.now)
+            f"{self.year}/season.json",
+            build_season(self.year, self.weekends, cancelled, self.completed, self.results, self.f1db(), self.now),
         )
 
     def build_circuit(self, w: ids.Weekend) -> None:
