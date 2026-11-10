@@ -236,7 +236,7 @@ class Build:
         else:
             summary = build_practice_summary(meta, results, laps, stints, weather, idmap)
         self.write(f"{rel}/laps.json", build_laps(meta, laps, position, intervals, idmap))
-        self.write(f"{rel}/strategy.json", build_strategy(meta, stints, pit, idmap))
+        self.write(f"{rel}/strategy.json", build_strategy(meta, stints, pit, rc, idmap, ids.parse_utc(s["date_start"])))
         self.write(f"{rel}/race-control.json", build_race_control(meta, rc, idmap))
         # summary last: its presence (non-provisional) marks the session complete.
         self.write(f"{rel}/summary.json", summary)

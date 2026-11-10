@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import bisect
+import logging
 import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -35,6 +36,8 @@ from f1data.models.session import (
     Strategy,
     Weather,
 )
+
+log = logging.getLogger(__name__)
 
 Rows = list[dict[str, Any]]
 
@@ -255,7 +258,9 @@ def _gap(value: Any) -> tuple[int | None, int | None]:
 # ---------------------------------------------------------------- strategy.json
 
 
-def build_strategy(meta: SessionMeta, stints: Rows, pit: Rows, idmap: IdMap) -> Strategy:
+def build_strategy(
+    meta: SessionMeta, stints: Rows, pit: Rows, race_control: Rows, idmap: IdMap, session_start: datetime
+) -> Strategy:
     out: dict[str, dict[str, list[Any]]] = {}
     for s in sorted(stints, key=lambda s: (s["driver_number"], s["stint_number"])):
         if s.get("lap_start") is None or s.get("lap_end") is None:
@@ -269,16 +274,44 @@ def build_strategy(meta: SessionMeta, stints: Rows, pit: Rows, idmap: IdMap) -> 
                 age_at_start=s.get("tyre_age_at_start"),
             )
         )
+    suspensions = red_flag_suspensions(race_control)
     for p in sorted(pit, key=lambda p: (p["driver_number"], p["date"])):
+        lane_ms = ms(p.get("lane_duration") if p.get("lane_duration") is not None else p.get("pit_duration"))
+        exit_utc = parse_utc(p["date"])
+        who = f"{meta.year}/{meta.round}/{meta.session} car {p['driver_number']} lap {p.get('lap_number')}"
+        if exit_utc < session_start:
+            log.info("pit: dropped pre-session entry %s at %s", who, p["date"])
+            continue
+        if lane_ms is None:
+            log.warning("pit: dropped entry without lane time %s at %s", who, p["date"])
+            continue
+        entry_utc = exit_utc - timedelta(milliseconds=lane_ms)
+        if any(start <= entry_utc <= end for start, end in suspensions):
+            log.info("pit: dropped red-flag pit lane entry %s (%d ms)", who, lane_ms)
+            continue
         out.setdefault(idmap.drivers[p["driver_number"]], {"stints": [], "stops": []})["stops"].append(
-            PitStop(
-                lap=p["lap_number"],
-                utc=parse_utc(p["date"]),
-                lane_ms=ms(p.get("lane_duration") if p.get("lane_duration") is not None else p.get("pit_duration")),
-                stop_ms=ms(p.get("stop_duration")),
-            )
+            PitStop(lap=p["lap_number"], utc=exit_utc, lane_ms=lane_ms, stop_ms=ms(p.get("stop_duration")))
         )
     return Strategy(**meta.fields(), drivers={k: DriverStrategy(**v) for k, v in sorted(out.items())})
+
+
+def red_flag_suspensions(race_control: Rows) -> list[tuple[datetime, datetime]]:
+    """(red flag, restart) windows: from a "RED FLAG" message to the next SESSION STARTED, or open-ended.
+
+    Cars wait in the pit lane while the session is suspended, and OpenF1 records that as a pit entry.
+    """
+    out: list[tuple[datetime, datetime]] = []
+    red: datetime | None = None
+    for r in sorted(race_control, key=lambda r: r["date"]):
+        t = parse_utc(r["date"])
+        if red is None and (r["message"].startswith("RED FLAG") or (r.get("flag") or "").upper() == "RED"):
+            red = t
+        elif red is not None and r.get("category") == "SessionStatus" and r["message"] == "SESSION STARTED":
+            out.append((red, t))
+            red = None
+    if red is not None:
+        out.append((red, datetime.max.replace(tzinfo=red.tzinfo)))
+    return out
 
 
 # ---------------------------------------------------------------- race-control.json

@@ -1,3 +1,4 @@
+import logging
 from datetime import UTC, datetime
 
 import pytest
@@ -15,6 +16,7 @@ from f1data.build.session import (
     build_strategy,
     clock_ms,
     parse_penalty,
+    red_flag_suspensions,
     sentence_case,
 )
 from f1data.sources import openf1
@@ -156,11 +158,60 @@ def test_laps_have_position_and_gap(brazil, race_summary):
 
 def test_strategy(brazil):
     c, idmap = brazil["c"], brazil["idmap"](RACE)
-    s = build_strategy(meta("race"), openf1.stints(c, RACE), openf1.pit(c, RACE), idmap)
+    rc, start = openf1.race_control(c, RACE), datetime(2026, 11, 8, 17, tzinfo=UTC)
+    s = build_strategy(meta("race"), openf1.stints(c, RACE), openf1.pit(c, RACE), rc, idmap, start)
     assert sum(len(d.stints) for d in s.drivers.values()) > 22
     assert all(st.tyre == st.tyre.lower() for d in s.drivers.values() for st in d.stints if st.tyre)
     stops = [p for d in s.drivers.values() for p in d.stops]
-    assert stops and all(isinstance(p.lane_ms, int) for p in stops if p.lane_ms is not None)
+    assert len(stops) == len(openf1.pit(c, RACE))  # no red flag in Brazil: every row is a stop
+    assert all(isinstance(p.lane_ms, int) for p in stops)
+
+
+MEXICO_RACE = 11404
+
+
+@pytest.fixture(scope="module")
+def mexico(shared_client):
+    c = shared_client
+    pit, rc = openf1.pit(c, MEXICO_RACE), openf1.race_control(c, MEXICO_RACE)
+    idmap = ids.IdMap(drivers={p["driver_number"]: f"car{p['driver_number']}" for p in pit}, teams={})
+    start = datetime(2026, 11, 1, 20, tzinfo=UTC)
+    s = build_strategy(meta("race"), openf1.stints(c, MEXICO_RACE), pit, rc, idmap, start)
+    return s, pit, rc
+
+
+def test_red_flag_suspension_window(mexico):
+    _, _, rc = mexico
+    # Mexico 2026: red flag on lap 45, restart at 15:45 local.
+    assert red_flag_suspensions(rc) == [
+        (datetime(2026, 11, 1, 21, 6, 2, tzinfo=UTC), datetime(2026, 11, 1, 21, 45, 0, 156000, tzinfo=UTC))
+    ]
+
+
+def test_red_flag_and_pre_race_pit_rows_are_not_stops(mexico):
+    s, pit, _ = mexico
+    stops = {(d, p.lap, p.lane_ms) for d, x in s.drivers.items() for p in x.stops}
+    # Pre-race rows (19:08:59Z, all durations null) are dropped.
+    assert sum(p["date"].startswith("2026-11-01T19:08") for p in pit) == 9
+    assert all(p.lane_ms is not None and p.utc.hour >= 20 for x in s.drivers.values() for p in x.stops)
+    # Cars parked in the pit lane during the suspension (~36-38 min) are dropped.
+    assert max(lane for _, _, lane in stops) < 120_000
+    # So are the pit lane exits at the restart that entered before it (Albon: 54.8 s, entry 21:44:58).
+    assert ("car23", 45, 54818) not in stops
+    # Real stops around the red flag stay: Gasly entered before the red flag and left 1 s after it.
+    assert ("car10", 44, 22800) in stops
+    assert ("car44", 44, 23806) in stops  # Hamilton, before the red flag
+    assert ("car11", 59, 29800) in stops  # Perez under the later safety car
+    assert len(stops) == len(pit) - 9 - 24
+
+
+def test_pit_row_without_lane_time_is_dropped_and_logged(caplog):
+    row = {"date": "2026-11-01T20:30:00+00:00", "lap_number": 5, "driver_number": 1, "lane_duration": None}
+    idmap = ids.IdMap(drivers={1: "norris"}, teams={})
+    with caplog.at_level(logging.WARNING, logger="f1data.build.session"):
+        s = build_strategy(meta("race"), [], [row], [], idmap, datetime(2026, 11, 1, 20, tzinfo=UTC))
+    assert s.drivers == {}
+    assert "without lane time" in caplog.text
 
 
 def test_overtakes(brazil):

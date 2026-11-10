@@ -24,6 +24,7 @@ OUT = ROOT / "tests" / "fixtures" / "http"
 YEAR = 2026
 MEETINGS = (1299, 1296)  # Brazil (latest race), Singapore (latest sprint weekend)
 LAST_ROUND = 20
+RED_FLAG_RACE = 11404  # Mexico 2026
 GZIP_OVER = 500_000
 
 
@@ -91,6 +92,10 @@ def main() -> None:
             if s["session_type"] == "Race":
                 for fetch in (openf1.pit, openf1.intervals, openf1.position, openf1.overtakes):
                     fetch(client, sk)
+
+    # Mexico race: red-flag suspension and pre-race pit rows (strategy filtering).
+    for fetch in (openf1.pit, openf1.stints, openf1.race_control):
+        fetch(client, RED_FLAG_RACE)
 
     # One short location window for the circuit-outline fallback (Brazil winner, 90 s).
     brazil = next(s for s in sessions if s["meeting_key"] == 1299 and s["session_name"] == "Race")

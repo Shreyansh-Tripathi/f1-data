@@ -126,9 +126,9 @@ class Stint(Model):
 
 class PitStop(Model):
     lap: int
-    utc: Utc
-    lane_ms: int | None
-    stop_ms: int | None
+    utc: Utc  # pit lane exit
+    lane_ms: int  # pit lane entry to exit
+    stop_ms: int | None  # stationary time; OpenF1 often lacks it
 
 
 class DriverStrategy(Model):
