@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Any
 
 from f1data.build.classify import classify
-from f1data.build.ids import JolpicaDriver, slug
+from f1data.build.ids import JolpicaDriver, match_f1db
 from f1data.models.drivers import CareerStats, DriverStats, DriverStatsFile, SeasonStats
 
 
@@ -80,25 +80,15 @@ def _count(races: list[dict[str, Any]], key: str, pred: Any) -> dict[str, int]:
 
 
 def _careers(year: int, known: dict[str, JolpicaDriver], f1db: dict[str, Any]) -> dict[str, CareerStats]:
-    """Map Jolpica drivers to F1DB entrants of `year` with race starts, by code+number, then by name."""
-    season = next((s for s in f1db.get("seasons", []) if s["year"] == year), None)
-    if season is None:
-        return {}
-    entrant_ids = {d["driverId"] for e in season["entrants"] for c in e["constructors"] for d in c["drivers"]}
-    racers = [d for d in f1db["drivers"] if d["id"] in entrant_ids and (d.get("totalRaceStarts") or 0) > 0]
-    by_code_number = {(d.get("abbreviation"), str(d.get("permanentNumber"))): d for d in racers}
-    by_name = {slug(f"{d['firstName']} {d['lastName']}"): d for d in racers}
     out = {}
-    for j in known.values():
-        f = by_code_number.get((j.code, str(j.number))) or by_name.get(slug(f"{j.first_name} {j.last_name}"))
-        if f:
-            out[j.id] = CareerStats(
-                championships=f.get("totalChampionshipWins") or 0,
-                starts=f.get("totalRaceStarts") or 0,
-                wins=f.get("totalRaceWins") or 0,
-                podiums=f.get("totalPodiums") or 0,
-                poles=f.get("totalPolePositions") or 0,
-                fastest_laps=f.get("totalFastestLaps") or 0,
-                points=float(f.get("totalPoints") or 0),
-            )
+    for driver_id, f in match_f1db(year, known, f1db).items():
+        out[driver_id] = CareerStats(
+            championships=f.get("totalChampionshipWins") or 0,
+            starts=f.get("totalRaceStarts") or 0,
+            wins=f.get("totalRaceWins") or 0,
+            podiums=f.get("totalPodiums") or 0,
+            poles=f.get("totalPolePositions") or 0,
+            fastest_laps=f.get("totalFastestLaps") or 0,
+            points=float(f.get("totalPoints") or 0),
+        )
     return out

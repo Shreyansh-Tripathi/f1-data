@@ -51,6 +51,16 @@ def save(key: str, body: Any) -> str:
     return name
 
 
+def f1db_subset(db: dict[str, Any], ids: set[str], season: dict[str, Any]) -> dict[str, Any]:
+    """The parts of F1DB the builders read: current entrants, this season, countries (for demonyms)."""
+    return {
+        "drivers": [d for d in db["drivers"] if d["id"] in ids],
+        "seasons": [season],
+        "countries": db["countries"],
+        "races": [],
+    }
+
+
 def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
     client = RecordingClient(ROOT / ".cache")
@@ -88,11 +98,7 @@ def main() -> None:
     db = f1db.download_json_single(client, release)
     season = next(s for s in db["seasons"] if s["year"] == YEAR)
     ids = {d["driverId"] for e in season["entrants"] for c in e["constructors"] for d in c["drivers"]}
-    subset = {
-        "drivers": [d for d in db["drivers"] if d["id"] in ids],
-        "seasons": [season],
-        "races": [],
-    }
+    subset = f1db_subset(db, ids, season)
     asset = next(a for a in release["assets"] if a["name"] == f1db.ASSET)
     client.index[asset["browser_download_url"]] = {"file": save(asset["browser_download_url"], subset), "kind": "zip"}
 

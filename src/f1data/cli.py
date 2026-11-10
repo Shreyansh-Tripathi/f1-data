@@ -47,6 +47,7 @@ class Build:
         self.force = force
         self.failures = 0
         self.written = 0
+        self._f1db: dict[str, Any] | None = None
 
     def write(self, rel: str, model: Any) -> None:
         if write_model(self.out / rel, model):
@@ -149,7 +150,8 @@ class Build:
         latest = self.latest_race()
         drivers, idmap = (latest[2], latest[1]) if latest else ([], ids.IdMap({}, {}))
         y = self.year
-        self.write(f"{y}/drivers.json", build_drivers(y, self.known, self.results, drivers, idmap, self.now))
+        out = build_drivers(y, self.known, self.results, drivers, idmap, self.f1db(), self.now)
+        self.write(f"{y}/drivers.json", out)
         self.write(f"{y}/teams.json", build_teams(y, self.results, drivers, idmap, self.now))
 
     def build_standings(self) -> None:
@@ -164,8 +166,13 @@ class Build:
         self.write(f"{y}/standings/drivers.json", build_driver_standings(y, drivers, active, self.now))
         self.write(f"{y}/standings/teams.json", build_team_standings(y, teams, self.now))
 
+    def f1db(self) -> dict[str, Any]:
+        if self._f1db is None:
+            self._f1db = f1db.download_json_single(self.c, f1db.latest_release(self.c))
+        return self._f1db
+
     def build_driver_stats(self) -> None:
-        db = f1db.download_json_single(self.c, f1db.latest_release(self.c))
+        db = self.f1db()
         out = build_driver_stats(self.year, self.known, self.results, self.qualifying, self.sprint, db, self.now)
         self.write(f"{self.year}/driver-stats.json", out)
 

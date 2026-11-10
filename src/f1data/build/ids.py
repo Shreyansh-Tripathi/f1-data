@@ -193,6 +193,26 @@ def session_ids(
     return IdMap(drivers=drivers, teams=teams)
 
 
+def match_f1db(year: int, known: dict[str, JolpicaDriver], f1db: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """Jolpica driverId -> F1DB driver, among F1DB entrants of `year` with race starts.
+
+    Matched by code + number, then by name (new drivers can lack a Jolpica code).
+    """
+    season = next((s for s in f1db.get("seasons", []) if s["year"] == year), None)
+    if season is None:
+        return {}
+    entrant_ids = {d["driverId"] for e in season["entrants"] for c in e["constructors"] for d in c["drivers"]}
+    racers = [d for d in f1db["drivers"] if d["id"] in entrant_ids and (d.get("totalRaceStarts") or 0) > 0]
+    by_code_number = {(d.get("abbreviation"), str(d.get("permanentNumber"))): d for d in racers}
+    by_name = {slug(f"{d['firstName']} {d['lastName']}"): d for d in racers}
+    out = {}
+    for j in known.values():
+        f = by_code_number.get((j.code, str(j.number))) or by_name.get(slug(f"{j.first_name} {j.last_name}"))
+        if f:
+            out[j.id] = f
+    return out
+
+
 def slug(text: str) -> str:
     ascii_text = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode()
     return re.sub(r"[^a-z0-9]+", "_", ascii_text.lower()).strip("_")

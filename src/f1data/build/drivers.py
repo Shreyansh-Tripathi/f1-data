@@ -1,11 +1,16 @@
-"""Season drivers and teams: Jolpica identity plus OpenF1 colour and headshot."""
+"""Season drivers and teams.
+
+Identity (code, name, nationality, date of birth) comes from Jolpica, with F1DB filling fields Jolpica
+lacks (e.g. a driver in their first race). OpenF1 provides number, colour and headshot; drivers without
+OpenF1 data keep Jolpica's race number and have no colour or headshot.
+"""
 
 from __future__ import annotations
 
 from datetime import date, datetime
 from typing import Any
 
-from f1data.build.ids import IdMap, JolpicaDriver
+from f1data.build.ids import IdMap, JolpicaDriver, match_f1db
 from f1data.models.drivers import Driver, Drivers, Team, Teams
 
 
@@ -32,23 +37,28 @@ def build_drivers(
     results: list[dict[str, Any]],
     openf1_drivers: list[dict[str, Any]],
     idmap: IdMap,
+    f1db: dict[str, Any],
     generated_at: datetime,
 ) -> Drivers:
     teams = latest_teams(results)
     active = active_driver_ids(results)
     openf1_by_id = {idmap.drivers[d["driver_number"]]: d for d in openf1_drivers if d["driver_number"] in idmap.drivers}
+    f1db_by_id = match_f1db(year, known, f1db)
+    demonyms = {c["id"]: c.get("demonym") for c in f1db.get("countries", [])}
     drivers = []
     for d in sorted(known.values(), key=lambda d: d.id):
         o = openf1_by_id.get(d.id, {})
+        f = f1db_by_id.get(d.id, {})
+        dob = d.date_of_birth or f.get("dateOfBirth")
         drivers.append(
             Driver(
                 id=d.id,
-                number=d.number,
-                code=d.code,
+                number=o.get("driver_number") or d.number,
+                code=d.code or f.get("abbreviation"),
                 first_name=d.first_name,
                 last_name=d.last_name,
-                nationality=d.nationality,
-                date_of_birth=date.fromisoformat(d.date_of_birth) if d.date_of_birth else None,
+                nationality=d.nationality or demonyms.get(f.get("nationalityCountryId")),
+                date_of_birth=date.fromisoformat(dob) if dob else None,
                 team_id=teams.get(d.id),
                 colour=_colour(o.get("team_colour")),
                 headshot_url=o.get("headshot_url"),
