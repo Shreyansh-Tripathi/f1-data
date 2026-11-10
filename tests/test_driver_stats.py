@@ -57,3 +57,33 @@ def test_career_totals_from_f1db(stats):
     assert alonso.championships == 2
     assert alonso.starts > 400
     assert sum(s.career is not None for s in by_id.values()) >= 22
+
+
+def test_rounds_carry_quali_race_and_team(stats):
+    by_id, d = stats
+    # Every Jolpica race and quali row appears exactly once.
+    entries = {(s.driver_id, r.round) for s in by_id.values() for r in s.rounds}
+    rows = {(row["Driver"]["driverId"], int(race["round"])) for race in d["results"] for row in race["Results"]}
+    rows |= {(row["Driver"]["driverId"], int(q["round"])) for q in d["qualifying"] for row in q["QualifyingResults"]}
+    assert entries == rows
+    for s in by_id.values():
+        assert [r.round for r in s.rounds] == sorted(r.round for r in s.rounds)
+
+    race20 = next(r for r in d["results"] if r["round"] == "20")
+    for row in race20["Results"]:
+        r20 = next(r for r in by_id[row["Driver"]["driverId"]].rounds if r.round == 20)
+        assert r20.team_id == row["Constructor"]["constructorId"]
+        assert r20.race_points == float(row["points"])
+        if row["positionText"].isdigit():
+            assert (r20.race_position, r20.race_classification) == (int(row["positionText"]), "finished")
+        else:
+            assert r20.race_position is None and r20.race_classification in ("dnf", "dns", "dsq")
+    # Brazil 2026: Verstappen qualified P16 (see Findings).
+    assert next(r for r in by_id["max_verstappen"].rounds if r.round == 20).quali_position == 16
+
+
+def test_rounds_season_points_add_up(stats):
+    by_id, _ = stats
+    for s in by_id.values():
+        assert sum(r.race_points or 0 for r in s.rounds) == pytest.approx(s.season.points)
+        assert sum(r.race_position == 1 for r in s.rounds) == s.season.wins

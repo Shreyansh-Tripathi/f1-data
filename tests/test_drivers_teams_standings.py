@@ -66,6 +66,18 @@ def test_teams(season_data, latest):
     assert mclaren.colour == "#F47600"
     assert "norris" in mclaren.driver_ids
     assert all(len(t.driver_ids) == 2 for t in out.teams)
+    short = {t.id: t.short_name for t in out.teams}
+    assert short["rb"] == "Racing Bulls"  # OpenF1 name; Jolpica says "RB F1 Team"
+    assert short["haas"] == "Haas"  # "Haas F1 Team" minus suffix
+    assert short["red_bull"] == "Red Bull Racing"
+    assert short["mclaren"] == "McLaren"
+    assert all(not n.endswith("F1 Team") for n in short.values())
+
+
+def test_team_short_name_falls_back_to_jolpica(season_data):
+    out = build_teams(2026, season_data["results"], [], ids.IdMap({}, {}), NOW)
+    short = {t.id: t.short_name for t in out.teams}
+    assert short["rb"] == "RB" and short["alpine"] == "Alpine"
 
 
 def test_identity_falls_back_to_f1db_when_jolpica_lacks_it(drivers_out, season_data):

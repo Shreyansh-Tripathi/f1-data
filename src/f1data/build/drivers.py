@@ -7,11 +7,14 @@ OpenF1 data keep Jolpica's race number and have no colour or headshot.
 
 from __future__ import annotations
 
+import re
 from datetime import date, datetime
 from typing import Any
 
 from f1data.build.ids import IdMap, JolpicaDriver, match_f1db
 from f1data.models.drivers import Driver, Drivers, Team, Teams
+
+F1_TEAM_SUFFIX = re.compile(r"\s+F1 Team$")
 
 
 def latest_teams(results: list[dict[str, Any]]) -> dict[str, str]:
@@ -84,6 +87,11 @@ def build_teams(
         for d in openf1_drivers
         if d["driver_number"] in idmap.teams
     }
+    openf1_names = {
+        idmap.teams[d["driver_number"]]: d["team_name"]
+        for d in openf1_drivers
+        if d["driver_number"] in idmap.teams and d.get("team_name")
+    }
     by_team: dict[str, list[str]] = {}
     active = active_driver_ids(results)
     for driver_id, team_id in latest_teams(results).items():
@@ -93,6 +101,7 @@ def build_teams(
         Team(
             id=tid,
             name=c["name"],
+            short_name=_short_team_name(openf1_names.get(tid) or c["name"]),
             nationality=c.get("nationality"),
             colour=colours.get(tid),
             driver_ids=sorted(by_team.get(tid, [])),
@@ -100,6 +109,11 @@ def build_teams(
         for tid, c in sorted(constructors.items())
     ]
     return Teams(generated_at=generated_at, year=year, teams=teams)
+
+
+def _short_team_name(name: str) -> str:
+    """OpenF1 team name ("Racing Bulls") over Jolpica's ("RB F1 Team"), without an "F1 Team" suffix."""
+    return F1_TEAM_SUFFIX.sub("", name) or name
 
 
 def _colour(value: str | None) -> str | None:
