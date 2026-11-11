@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 import pytest
 
 from f1data.build import ids
-from f1data.build.drivers import active_driver_ids, build_drivers, build_teams
+from f1data.build.drivers import TEAM_SHORT_NAMES, active_driver_ids, build_drivers, build_teams
 from f1data.build.standings import build_driver_standings, build_team_standings
 from f1data.sources import f1db, jolpica, openf1
 
@@ -67,17 +67,37 @@ def test_teams(season_data, latest):
     assert "norris" in mclaren.driver_ids
     assert all(len(t.driver_ids) == 2 for t in out.teams)
     short = {t.id: t.short_name for t in out.teams}
-    assert short["rb"] == "Racing Bulls"  # OpenF1 name; Jolpica says "RB F1 Team"
-    assert short["haas"] == "Haas"  # "Haas F1 Team" minus suffix
-    assert short["red_bull"] == "Red Bull Racing"
-    assert short["mclaren"] == "McLaren"
-    assert all(not n.endswith("F1 Team") for n in short.values())
+    assert short == {
+        "alpine": "Alpine",
+        "aston_martin": "Aston Martin",
+        "audi": "Audi",
+        "cadillac": "Cadillac",
+        "ferrari": "Ferrari",
+        "haas": "Haas",
+        "mclaren": "McLaren",
+        "mercedes": "Mercedes",
+        "rb": "Racing Bulls",
+        "red_bull": "Red Bull",
+        "williams": "Williams",
+    }
+    assert {t.id: t.name for t in out.teams}["red_bull"] == "Red Bull"  # full name unchanged (Jolpica)
 
 
-def test_team_short_name_falls_back_to_jolpica(season_data):
-    out = build_teams(2026, season_data["results"], [], ids.IdMap({}, {}), NOW)
-    short = {t.id: t.short_name for t in out.teams}
-    assert short["rb"] == "RB" and short["alpine"] == "Alpine"
+def test_every_season_team_has_a_curated_short_name(season_data):
+    # A new constructor id must be added to TEAM_SHORT_NAMES (otherwise it silently gets the full name).
+    team_ids = {row["Constructor"]["constructorId"] for r in season_data["results"] for row in r["Results"]}
+    assert team_ids <= set(TEAM_SHORT_NAMES)
+
+
+def test_team_short_name_falls_back_to_full_name_for_unknown_ids():
+    row = {
+        "Driver": {"driverId": "someone"},
+        "Constructor": {"constructorId": "brabham", "name": "Brabham F1 Team", "nationality": "British"},
+        "number": "7",
+        "positionText": "1",
+    }
+    out = build_teams(2026, [{"round": "1", "Results": [row]}], [], ids.IdMap({}, {}), NOW)
+    assert [(t.id, t.name, t.short_name) for t in out.teams] == [("brabham", "Brabham F1 Team", "Brabham F1 Team")]
 
 
 def test_identity_falls_back_to_f1db_when_jolpica_lacks_it(drivers_out, season_data):
