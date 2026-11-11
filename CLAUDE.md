@@ -40,11 +40,20 @@ Outside `v1/`, not in the manifest and not part of the app contract: `meta/lag.j
 
 Session codes: `fp1 fp2 fp3 sq sprint q race`. `summary.json` has a distinct shape per session type (practice, qualifying, race/sprint), discriminated by `type`; every type lists the session's `drivers` (`{id, number, code, firstName, lastName, teamId, colour}` from that session's OpenF1 drivers, so practice-only drivers missing from `drivers.json` can be named). `overtakes.json` exists for race and sprint only. Session files carry `provisional`.
 
+## Contract change policy
+
+- Each published file has its own `schemaVersion` (the model's `schema_version`; default 1).
+- Within a schemaVersion, changes are **additive only**: new fields, new files.
+- Renaming or removing a field, changing its type or nullability, adding or removing an enum value, or changing a field's meaning bumps **that file's** `schemaVersion`. The app's DTOs parse enums strictly, so a new value counts as a change. A change in meaning (e.g. a different unit or source) can't be detected by the test, so bump it by hand.
+- `tests/contract/snapshot.json` is the committed contract: every file's schemaVersion and its fields flattened to `path -> type` (`f1data/models/contract.py`). `tests/test_contract.py` fails on a non-additive change without a bump, and on any difference from the snapshot. After a reviewed change run `uv run python scripts/update_contract_snapshot.py` and commit the snapshot.
+- New output models must be registered in `OUTPUT_FILES` (a test checks every `OutputFile` subclass is listed).
+- Versions so far: `race-control.json` is 2 (`deletion.timeMs` renamed to `lapTimeMs`); everything else is 1.
+
 ## Rules
 
 - **Derive, don't hardcode.** Grid size, knockout counts, points systems, sprint weekends: all from data. **Only exception:** `TEAM_SHORT_NAMES` in `build/drivers.py`, a curated map of team id → display short name (`teams.json` `shortName`). It holds display names only and is never used in logic; unknown ids fall back to the full name; a test fails if any team in the current season's `teams.json` lacks an entry, so a new team gets noticed instead of silently falling back. Quali knockout segment = last of Q1/Q2/Q3 the driver took part in: Jolpica lists a segment key with an empty time when a driver reached it without setting a lap (e.g. `"Q2": ""`). Without Jolpica (sprint qualifying), fall back to the last segment with a time.
 - Times as integer milliseconds; dates as UTC ISO-8601.
-- Every file has `schemaVersion` and `generatedAt`. Output models are `pydantic` v2; validate before writing.
+- Every file has `schemaVersion` (per file, see Contract change policy) and `generatedAt`. Output models are `pydantic` v2; validate before writing.
 - Deterministic output: sorted keys, stable ordering, so unchanged data produces unchanged hashes. Keep the previous `generatedAt` when the rest of a file is unchanged.
 - `replay.json`: columnar per driver (`t`, `x`, `y`, `pos`), 1 Hz, integer coords. Budget < 2 MB per session.
 - Idempotent and resumable: skip sessions whose output exists and is not provisional, unless `--force`.
@@ -59,10 +68,10 @@ Session codes: `fp1 fp2 fp3 sq sprint q race`. `summary.json` has a distinct sha
 - **Gaps.** `gapMs` is an integer on the lead lap. For lapped cars `gapMs` is null and `lapsBehind` is an integer (OpenF1 sends `"+1 LAP"` / `"+2 LAPS"`).
 - **Laps.** `laps.json` carries per-lap `pos` and `gapMs`/`lapsBehind`, from `position` and `intervals` reduced to the last value at or before each lap's end.
 - **Pit stops.** `strategy.json` stops are OpenF1 `pit` rows minus non-stops: rows dated before the session start (pre-race, all durations null), rows without a lane time (logged), and rows whose pit lane entry (`date` − lane duration; `date` is the lane exit) falls inside a red-flag suspension, from the `RED FLAG` message to the next `SESSION STARTED`. `laneMs` is always an int; `stopMs` is null when OpenF1 lacks `stop_duration`.
-- **Periods.** Race/sprint `summary.json` has `periods: [{kind: sc|vsc|red, startLap, endLap, startTime, endTime, startMessage, endMessage}]` from race control:
+- **Periods.** Every `summary.json` (race, sprint, qualifying, sprint qualifying, practice) has `periods: [{kind: sc|vsc|red, startLap, endLap, startTime, endTime, startMessage, endMessage}]` from race control:
   - SC: `SAFETY CAR DEPLOYED` .. `SAFETY CAR IN THIS LAP`; VSC: `VSC DEPLOYED` .. `VSC ENDING` (category `SafetyCar`). Deploying the other kind while one is open ends it there (VSC→SC, SC→VSC); a repeated deployment is ignored.
   - Red: a message starting `RED FLAG` (category `Other` in races) or a `Flag`/`RED` row .. the next `SESSION STARTED` (restart). A red flag ends any open SC/VSC.
-  - Anything open at `CHEQUERED FLAG` / `SESSION FINISHED` ends there; messages after it are ignored.
+  - Anything open at `CHEQUERED FLAG` / `SESSION FINISHED` ends there. In races and sprints later messages are ignored. In qualifying and practice each segment ends this way and processing continues, so an unresumed red flag (`Q2 WILL NOT BE RESUMED`) ends at `SESSION FINISHED`. Laps are null outside races (race control has no lap numbers there).
   - Other wording mentioning SAFETY CAR/VSC is logged at WARNING unless it is a known non-period message (lights on/off, behind/overtake the safety car, will use straight, SC/VSC infringement, "at safety car line").
 - **Race result status.** `statusText` is Jolpica's `status` as published (2026 only has generic values: Finished, Lapped, Retired, Did not start, Disqualified). `retirementReason` is F1DB `raceResults` / `sprintRaceResults` `reasonRetired` ("Gearbox", "Collision", ...) for the race within ±1 day, matched by car number; null when F1DB has none (or doesn't have the race yet). Neither is used for classification.
 - **Race-control kind** (first match wins): `penalty` (parsed penalty, `PENALTY SERVED`, `REPRIMAND`) → `warning` (`WARNING FOR CAR`) → `noFurtherAction` → `investigation` (`UNDER INVESTIGATION`, `WILL BE INVESTIGATED`) → `noted` → `lapDeleted` (`CAR … TIME [t] DELETED - …` / `LAP DELETED - …`) → `lapReinstated` (`… TIME t WILL BE REINSTATED` / `… LAP n WILL BE REINSTATED`) → `safetyCar` (category `SafetyCar` or SC/VSC wording) → `flag` (category `Flag`, `RED FLAG`, any `… FLAG`) → `other`.

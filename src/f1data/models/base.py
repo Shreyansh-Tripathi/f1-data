@@ -8,7 +8,7 @@ from typing import Annotated, Literal
 from pydantic import AwareDatetime, BaseModel, ConfigDict, PlainSerializer
 from pydantic.alias_generators import to_camel
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 1  # default; each file's model overrides `schema_version` when its contract breaks
 
 SessionCode = Literal["fp1", "fp2", "fp3", "sq", "sprint", "q", "race"]
 
