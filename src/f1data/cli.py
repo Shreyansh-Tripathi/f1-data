@@ -26,6 +26,7 @@ from f1data.build.session import (
     build_race_summary,
     build_strategy,
     f1db_quali_codes,
+    f1db_retirement_reasons,
 )
 from f1data.build.standings import build_driver_standings, build_team_standings, title_context
 from f1data.calendar import should_build
@@ -248,7 +249,8 @@ class Build:
 
         if is_race:
             grid = openf1.starting_grid(c, w.meeting_key, final=final) if code == "race" else None
-            summary = build_race_summary(meta, jolpica_rows, results, weather, idmap, grid, rc)
+            reasons = f1db_retirement_reasons(self.f1db(), w.race_start.date(), sprint=code == "sprint")
+            summary = build_race_summary(meta, jolpica_rows, results, weather, idmap, grid, rc, reasons)
             self.write(f"{rel}/overtakes.json", build_overtakes(meta, openf1.overtakes(c, sk, final=final), idmap))
         elif code in ("q", "sq"):
             jq = self.jolpica_rows(self.qualifying, w.round, "QualifyingResults") if code == "q" else None

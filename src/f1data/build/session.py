@@ -104,6 +104,7 @@ def build_race_summary(
     idmap: IdMap,
     starting_grid: Rows | None = None,
     race_control: Rows = (),
+    retirement_reasons: dict[int, str] | None = None,
 ) -> RaceSummary:
     """Race or sprint classification from Jolpica; OpenF1 flags cross-check DNF/DNS/DSQ."""
     by_driver = {idmap.driver(r["driver_number"]): r for r in openf1_results}
@@ -136,6 +137,7 @@ def build_race_summary(
                 laps_behind=winner_laps - laps if lapped else None,
                 points=float(row.get("points", 0)),
                 status_text=row.get("status") or None,
+                retirement_reason=(retirement_reasons or {}).get(int(row["number"])),
             )
         )
         fl = row.get("FastestLap")
@@ -459,18 +461,27 @@ def parse_penalty(message: str, idmap: IdMap) -> Penalty | None:
     return None
 
 
-# "CAR 23 (ALB)", "CARS 4 (NOR) AND 81 (PIA)", "CARS 1 (A), 2 (B) AND 3 (C)", "CAR 5 - ..."
-NAMED_CARS = re.compile(r"\bCARS? (\d+(?: \([A-Z]{3}\))?(?:(?:, | AND )\d+(?: \([A-Z]{3}\))?)*)")
-LAP_DELETED_TRACK_LIMITS = re.compile(r"\b(?:TIME(?: \S+)?|LAP) DELETED - TRACK LIMITS\b")
+# "CAR 23 (ALB)", "CARS 4 (NOR) AND 81 (PIA)", "CARS 1 (A), 2 (B) AND 3 (C)", "CAR 5 - ...", and code-only
+# "CAR LAW TIME DELETED ..." (Canada 2026 qualifying).
+NAMED_CARS = re.compile(r"\bCARS? (\d+(?: \([A-Z]{3}\))?(?:(?:, | AND )\d+(?: \([A-Z]{3}\))?)*|[A-Z]{3}\b)")
+_CAR = r"\bCAR (?:\d+|[A-Z]{3})(?: \([A-Z]{3}\))? "
+_LAP_TIME = r"\d+:\d{2}\.\d{3}"
+LAP_DELETED = re.compile(_CAR + rf"(?:TIME(?: (?P<time>{_LAP_TIME}))?|LAP) DELETED - (?P<why>.+)")
+LAP_REINSTATED = re.compile(_CAR + rf"(?:TIME (?P<time>{_LAP_TIME})|LAP (?P<lap>\d+)) WILL BE REINSTATED")
+DELETION_REASONS = {"TRACK LIMITS": "trackLimits", "DOUBLE YELLOW": "doubleYellow"}
 
 
 def named_drivers(r: dict[str, Any], idmap: IdMap) -> list[str]:
-    numbers = [int(n) for m in NAMED_CARS.finditer(r["message"]) for n in re.findall(r"\d+", m.group(1))]
-    if r.get("driver_number") is not None:
-        numbers.insert(0, r["driver_number"])
+    """Cars a message names, by number or (rarely) by code alone, mapped to driver ids; unknown ones dropped."""
+    found: list[str | None] = [idmap.driver(r.get("driver_number"))]
+    for m in NAMED_CARS.finditer(r["message"]):
+        group = m.group(1)
+        if group[0].isdigit():
+            found += [idmap.driver(int(n)) for n in re.findall(r"\d+", group)]
+        else:
+            found.append(idmap.codes.get(group))
     out: list[str] = []
-    for n in numbers:
-        driver = idmap.driver(n)
+    for driver in found:
         if driver and driver not in out:
             out.append(driver)
     return out
@@ -481,14 +492,18 @@ def race_control_kind(r: dict[str, Any], penalty: Penalty | None) -> str:
     m = r["message"]
     if penalty or "PENALTY SERVED" in m or "REPRIMAND" in m:
         return "penalty"
+    if re.search(r"\bWARNING FOR CAR\b", m):
+        return "warning"
     if "NO FURTHER ACTION" in m or "NO FURTHER INVESTIGATION" in m:
         return "noFurtherAction"
     if "UNDER INVESTIGATION" in m or "WILL BE INVESTIGATED" in m:
         return "investigation"
     if re.search(r"\bNOTED\b", m):
         return "noted"
-    if LAP_DELETED_TRACK_LIMITS.search(m):
-        return "trackLimits"
+    if LAP_DELETED.search(m):
+        return "lapDeleted"
+    if LAP_REINSTATED.search(m):
+        return "lapReinstated"
     if r.get("category") == "SafetyCar" or SC_WORDING.search(m):
         return "safetyCar"
     if r.get("category") == "Flag" or is_red_flag(r) or " FLAG" in m:
@@ -497,25 +512,56 @@ def race_control_kind(r: dict[str, Any], penalty: Penalty | None) -> str:
 
 
 def build_race_control(meta: SessionMeta, rows: Rows, idmap: IdMap) -> RaceControl:
-    messages = []
+    entries = []
     for r in sorted(rows, key=lambda r: parse_utc(r["date"])):
         penalty = parse_penalty(r["message"], idmap)
-        messages.append(
-            RaceControlMessage(
-                utc=parse_utc(r["date"]),
-                lap=r.get("lap_number"),
-                category=_lower_first(r.get("category") or "other"),
-                flag=r["flag"].lower() if r.get("flag") else None,
-                scope=r["scope"].lower() if r.get("scope") else None,
-                sector=r.get("sector"),
-                driver_id=idmap.driver(r.get("driver_number")),
-                driver_ids=named_drivers(r, idmap),
-                message=r["message"],
-                kind=race_control_kind(r, penalty),
-                penalty=penalty,
-            )
+        entries.append(
+            {
+                "utc": parse_utc(r["date"]),
+                "lap": r.get("lap_number"),
+                "category": _lower_first(r.get("category") or "other"),
+                "flag": r["flag"].lower() if r.get("flag") else None,
+                "scope": r["scope"].lower() if r.get("scope") else None,
+                "sector": r.get("sector"),
+                "driver_id": idmap.driver(r.get("driver_number")),
+                "driver_ids": named_drivers(r, idmap),
+                "message": r["message"],
+                "kind": race_control_kind(r, penalty),
+                "penalty": penalty,
+                "deletion": _deletion(r["message"]),
+            }
         )
-    return RaceControl(**meta.fields(), messages=messages)
+    _mark_reinstated(entries)
+    return RaceControl(**meta.fields(), messages=[RaceControlMessage(**e) for e in entries])
+
+
+def _deletion(message: str) -> dict[str, Any] | None:
+    m = LAP_DELETED.search(message)
+    if not m:
+        return None
+    why = m.group("why")
+    reason = next((v for k, v in DELETION_REASONS.items() if why.startswith(k)), "other")
+    return {"reason": reason, "time_ms": clock_ms(m.group("time")), "reinstated": False}
+
+
+def _mark_reinstated(entries: list[dict[str, Any]]) -> None:
+    """A reinstatement clears every earlier deletion for the same driver with the same time, or with the same
+    lap number when it names a lap ("CAR 55 (SAI) LAP 1 WILL BE REINSTATED" vs "... DELETED - ... LAP 1 ...")."""
+    for i, e in enumerate(entries):
+        m = LAP_REINSTATED.search(e["message"]) if e["kind"] == "lapReinstated" else None
+        if not m or not e["driver_ids"]:
+            continue
+        driver, time_ms, lap = e["driver_ids"][0], clock_ms(m.group("time")), m.group("lap")
+        matched = False
+        for d in entries[:i]:
+            deletion = d["deletion"]
+            if not deletion or d["kind"] != "lapDeleted" or d["driver_ids"][:1] != [driver]:
+                continue
+            same_lap = lap is not None and re.search(rf"\bLAP {lap}\b", LAP_DELETED.search(d["message"])["why"])
+            if (time_ms is not None and deletion["time_ms"] == time_ms) or same_lap:
+                deletion["reinstated"] = matched = True
+        if not matched:
+            log.warning("race control: reinstatement with no matching deletion: %r", e["message"])
 
 
 # ---------------------------------------------------------------- quali.json
@@ -583,13 +629,26 @@ def _quali_status_fields(r: dict[str, Any], f1db_codes: dict[int, str] | None, m
     return {"status": status, "status_text": text}
 
 
-def f1db_quali_codes(f1db: dict[str, Any], race_day: date, sprint: bool) -> dict[int, str] | None:
-    """Car number -> F1DB qualifying positionText for the race within ±1 day, or None if F1DB lacks it yet."""
-    key = "sprintQualifyingResults" if sprint else "qualifyingResults"
+def _f1db_rows(f1db: dict[str, Any], race_day: date, key: str) -> list[dict[str, Any]] | None:
+    """F1DB result rows under `key` for the race within ±1 day of `race_day`; None until F1DB has them."""
     for race in f1db.get("races", []):
         if abs(date.fromisoformat(race["date"]) - race_day) <= timedelta(days=1) and race.get(key):
-            return {int(x["driverNumber"]): x["positionText"] for x in race[key] if x.get("driverNumber")}
+            return race[key]
     return None
+
+
+def f1db_quali_codes(f1db: dict[str, Any], race_day: date, sprint: bool) -> dict[int, str] | None:
+    """Car number -> F1DB qualifying positionText, or None if F1DB lacks the session yet."""
+    rows = _f1db_rows(f1db, race_day, "sprintQualifyingResults" if sprint else "qualifyingResults")
+    return {int(x["driverNumber"]): x["positionText"] for x in rows if x.get("driverNumber")} if rows else None
+
+
+def f1db_retirement_reasons(f1db: dict[str, Any], race_day: date, sprint: bool) -> dict[int, str]:
+    """Car number -> F1DB reasonRetired ("Gearbox", "Collision", ...) for the race or sprint."""
+    rows = _f1db_rows(f1db, race_day, "sprintRaceResults" if sprint else "raceResults") or []
+    return {
+        int(x["driverNumber"]): x["reasonRetired"] for x in rows if x.get("driverNumber") and x.get("reasonRetired")
+    }
 
 
 def _segment_times(r: dict[str, Any]) -> tuple[int | None, int | None, int | None]:

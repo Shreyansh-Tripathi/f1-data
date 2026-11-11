@@ -38,6 +38,7 @@ class ClassifiedResult(Model):
     laps_behind: int | None
     points: float
     status_text: str | None  # source wording as published, e.g. "Retired", "Lapped"; may be generic
+    retirement_reason: str | None  # e.g. "Gearbox", "Collision" (F1DB), when known
 
 
 class FastestLap(Model):
@@ -167,6 +168,12 @@ class Penalty(Model):
     reason: str | None  # stewards' wording, e.g. "REJOINING UNSAFELY"
 
 
+class LapDeletion(Model):
+    reason: Literal["trackLimits", "doubleYellow", "other"]
+    time_ms: int | None  # the deleted time, when the message gives one
+    reinstated: bool  # a later "WILL BE REINSTATED" for the same driver and time (or lap)
+
+
 class RaceControlMessage(Model):
     utc: Utc
     lap: int | None
@@ -177,8 +184,20 @@ class RaceControlMessage(Model):
     driver_id: str | None
     driver_ids: list[str]  # every car the message names, in order
     message: str
-    kind: Literal["flag", "safetyCar", "penalty", "investigation", "noted", "noFurtherAction", "trackLimits", "other"]
+    kind: Literal[
+        "flag",
+        "safetyCar",
+        "penalty",
+        "warning",
+        "investigation",
+        "noted",
+        "noFurtherAction",
+        "lapDeleted",
+        "lapReinstated",
+        "other",
+    ]
     penalty: Penalty | None
+    deletion: LapDeletion | None  # kind lapDeleted only
 
 
 class RaceControl(SessionFile):

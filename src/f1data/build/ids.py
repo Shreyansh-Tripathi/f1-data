@@ -155,6 +155,7 @@ class IdMap:
 
     drivers: dict[int, str]
     teams: dict[int, str]
+    codes: dict[str, str] = field(default_factory=dict)  # OpenF1 name_acronym -> driver id
 
     def driver(self, number: int | None) -> str | None:
         return self.drivers.get(number) if number is not None else None
@@ -192,7 +193,8 @@ def session_ids(
             teams[n] = team_by_name[d["team_name"]]
         else:
             teams[n] = slug(d.get("team_name") or "") or "unknown"
-    return IdMap(drivers=drivers, teams=teams)
+    codes = {d["name_acronym"]: drivers[d["driver_number"]] for d in openf1_drivers if d.get("name_acronym")}
+    return IdMap(drivers=drivers, teams=teams, codes=codes)
 
 
 def match_f1db(year: int, known: dict[str, JolpicaDriver], f1db: dict[str, Any]) -> dict[str, dict[str, Any]]:

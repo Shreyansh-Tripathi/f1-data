@@ -14,12 +14,14 @@ from f1data.build.session import (
     build_race_control,
     build_race_summary,
     f1db_quali_codes,
+    f1db_retirement_reasons,
     quali_status,
 )
 from f1data.sources import f1db, openf1
 
 NOW = datetime(2026, 11, 12, tzinfo=UTC)
 BRAZIL_RACE, MEXICO_RACE, KL_RACE = 11412, 11404, 11731
+CANADA_Q, R4_SPRINT = 11287, 11275
 R4_SQ, R4_Q, R17_SQ, R17_Q, R19_Q = 11271, 11276, 11379, 11384, 11400
 
 
@@ -169,6 +171,7 @@ def test_race_control_kinds_on_mexico(mexico_rc):
     assert (noted.kind, noted.driver_ids) == ("noted", [idmap.driver(10)])
     assert kind_of(out, "FIA STEWARDS: INCIDENT INVOLVING CAR 10 (GAS) REVIEWED NO FURTHER").kind == "noFurtherAction"
     assert kind_of(out, "SESSION STARTED").kind == "other"
+    assert all(m.deletion is None for m in out.messages if m.kind != "lapDeleted")
     kinds = {m.kind for m in out.messages}
     assert {"flag", "safetyCar", "noted", "noFurtherAction", "penalty", "investigation"} <= kinds
 
@@ -199,22 +202,25 @@ def test_race_control_kinds_on_mexico(mexico_rc):
             [1],
         ),
         ("INCIDENT INVOLVING CAR 1 (NOR) NOTED - VSC INFRINGEMENT", "Other", "noted", [1]),
-        ("CAR 1 (NOR) TIME 1:32.490 DELETED - TRACK LIMITS AT TURN 5 LAP 5 16:37:46", "Other", "trackLimits", [1]),
-        ("CAR 81 (PIA) LAP DELETED - TRACK LIMITS AT TURN 11 LAP 3 21:35:19 (PIT)", "Other", "trackLimits", [81]),
-        ("CAR LAW TIME DELETED - TRACK LIMITS AT TURN 4 (NEXT LAP PIT) (Q1)", "Other", "trackLimits", []),
+        ("CAR 1 (NOR) TIME 1:32.490 DELETED - TRACK LIMITS AT TURN 5 LAP 5 16:37:46", "Other", "lapDeleted", [1]),
+        ("CAR 81 (PIA) LAP DELETED - TRACK LIMITS AT TURN 11 LAP 3 21:35:19 (PIT)", "Other", "lapDeleted", [81]),
+        ("CAR LAW TIME DELETED - TRACK LIMITS AT TURN 4 (NEXT LAP PIT) (Q1)", "Other", "lapDeleted", [30]),
+        ("CAR 1 (NOR) TIME 1:32.490 WILL BE REINSTATED", "Other", "lapReinstated", [1]),
+        ("CAR 55 (SAI) LAP 1 WILL BE REINSTATED", "Other", "lapReinstated", [55]),
+        ("FIA STEWARDS: WARNING FOR CAR 55 (SAI) - MOVING UNDER BRAKING (14:00:00)", "Other", "warning", [55]),
         ("BLACK AND WHITE FLAG FOR CAR 16 (LEC) - TRACK LIMITS", "Flag", "flag", [16]),
         ("BLACK AND WHITE FLAG FOR CAR 5 - CROSSING THE LINE AT PIT ENTRY (14:00:00)", "Flag", "flag", [5]),
         ("WAVED BLUE FLAG FOR CAR 44 (HAM) TIMED AT 16:11:36", "Flag", "flag", [44]),
         ("FIRST CAR TO TAKE THE FLAG - CAR 1 (NOR)", "Other", "flag", [1]),
         ("SAFETY CAR IN THIS LAP", "SafetyCar", "safetyCar", []),
         ("LAPPED CARS MAY NOW OVERTAKE THE SAFETY CAR: 1, 16", "Other", "safetyCar", []),
-        ("CAR 1 (NOR) TIME 1:21.003 DELETED - DOUBLE YELLOW AT TURN 7", "Other", "other", [1]),
+        ("CAR 1 (NOR) TIME 1:21.003 DELETED - DOUBLE YELLOW AT TURN 7", "Other", "lapDeleted", [1]),
         ("INCIDENT INVOLVING ALL CARS NOTED - RACE CONTROL TEST", "Other", "noted", []),
     ],
 )
 def test_race_control_kind_and_named_cars(message, category, kind, cars):
-    numbers = {1: "norris", 5: "bortoleto", 16: "leclerc", 44: "hamilton", 81: "piastri"}
-    idmap = ids.IdMap(drivers=numbers, teams={})
+    numbers = {1: "norris", 5: "bortoleto", 16: "leclerc", 30: "lawson", 44: "hamilton", 55: "sainz", 81: "piastri"}
+    idmap = ids.IdMap(drivers=numbers, teams={}, codes={"LAW": "lawson", "NOR": "norris"})
     row = {"date": "2026-01-01T15:00:00+00:00", "message": message, "category": category, "flag": None}
     m = build_race_control(meta("race", 1), [row], idmap).messages[0]
     assert m.kind == kind
@@ -279,3 +285,107 @@ def test_qualifying_status(shared_client, idmap_for, db, weekends, season_data, 
 )
 def test_quali_status_rules(row, f1db_code, expected):
     assert quali_status(row, f1db_code) == expected
+
+
+# ---------------------------------------------------------------- lap deletions / reinstatements / codes
+
+
+def deletion_row(t, message):
+    return {"date": f"2026-01-01T{t}+00:00", "message": message, "category": "Other", "flag": None}
+
+
+def test_lap_deletion_reasons_and_reinstatement_matching():
+    idmap = ids.IdMap(drivers={41: "arvid_lindblad", 55: "sainz"}, teams={})
+    out = build_race_control(
+        meta("fp1", 1),
+        [
+            deletion_row("12:43:44", "CAR 41 (LIN) TIME 2:34.639 DELETED - TRACK LIMITS AT TURN 4 LAP 9 12:43:44"),
+            deletion_row("12:47:48", "CAR 41 (LIN) LAP DELETED - DOUBLE YELLOW AT TURN 5 LAP 11 12:47:48 (PIT)"),
+            deletion_row("13:02:30", "CAR 41 (LIN) TIME 2:12.515 DELETED - TRACK LIMITS AT TURN 1 LAP 15 13:02:30"),
+            deletion_row("13:03:05", "CAR 41 (LIN) TIME 2:12.515 DELETED - TRACK LIMITS AT TURN 4 LAP 15 13:03:05"),
+            deletion_row("13:04:00", "CAR 55 (SAI) TIME 2:12.515 DELETED - UNSAFE REJOIN"),  # same time, other car
+            deletion_row("13:05:00", "CAR 55 (SAI) LAP DELETED - TRACK LIMITS AT TURN 5 LAP 1 15:04:11"),
+            deletion_row("13:20:00", "CAR 41 (LIN) TIME 2:12.515 WILL BE REINSTATED"),
+            deletion_row("13:21:00", "CAR 55 (SAI) LAP 1 WILL BE REINSTATED"),
+        ],
+        idmap,
+    )
+    got = [
+        (m.kind, m.deletion and (m.deletion.reason, m.deletion.time_ms, m.deletion.reinstated)) for m in out.messages
+    ]
+    assert got == [
+        ("lapDeleted", ("trackLimits", 154639, False)),
+        ("lapDeleted", ("doubleYellow", None, False)),
+        ("lapDeleted", ("trackLimits", 132515, True)),  # both deletions of the same time are reinstated
+        ("lapDeleted", ("trackLimits", 132515, True)),
+        ("lapDeleted", ("other", 132515, False)),
+        ("lapDeleted", ("trackLimits", None, True)),  # matched by lap number
+        ("lapReinstated", None),
+        ("lapReinstated", None),
+    ]
+
+
+def test_reinstatement_without_deletion_is_logged(caplog):
+    idmap = ids.IdMap(drivers={1: "norris"}, teams={})
+    with caplog.at_level(logging.WARNING, logger="f1data.build.session"):
+        build_race_control(
+            meta("q", 1), [deletion_row("13:00:00", "CAR 1 (NOR) TIME 1:30.000 WILL BE REINSTATED")], idmap
+        )
+    assert "reinstatement with no matching deletion" in caplog.text
+
+
+def test_real_reinstatement_round_4_sprint(shared_client, idmap_for):
+    out = build_race_control(meta("sprint", 4), openf1.race_control(shared_client, R4_SPRINT), idmap_for(R4_SPRINT, 4))
+    deleted = next(m for m in out.messages if m.message.startswith("CAR 30 (LAW) TIME 1:37.515 DELETED"))
+    assert (deleted.driver_ids, deleted.deletion.time_ms, deleted.deletion.reinstated) == (["lawson"], 97515, True)
+    assert kind_of(out, "CAR 30 (LAW) TIME 1:37.515 WILL BE REINSTATED").kind == "lapReinstated"
+
+
+def test_code_only_car_resolved_through_session_acronyms(shared_client, idmap_for):
+    # Canada 2026 qualifying (round 5): race control named three cars by code only.
+    idmap = idmap_for(CANADA_Q, 5)
+    out = build_race_control(meta("q", 5), openf1.race_control(shared_client, CANADA_Q), idmap)
+    law = kind_of(out, "CAR LAW TIME DELETED - TRACK LIMITS")
+    assert (law.kind, law.driver_ids) == ("lapDeleted", ["lawson"])
+    assert (law.deletion.reason, law.deletion.time_ms) == ("trackLimits", None)
+    assert kind_of(out, "CAR LEC TIME 1:36.518 DELETED").driver_ids == ["leclerc"]
+    assert kind_of(out, "CAR BEA TIME 1:39.643 DELETED").driver_ids == ["bearman"]
+    # Words that look like codes ("LAPPED CARS MAY ...", "ALL CARS USE ...") resolve to nothing.
+    assert all(not m.driver_ids for m in out.messages if "ALL CARS" in m.message)
+
+
+# ---------------------------------------------------------------- retirementReason
+
+
+def test_retirement_reason_from_f1db(season_data, shared_client, idmap_for, db, weekends):
+    c = shared_client
+    jolpica = next(r for r in season_data["results"] if r["round"] == "20")["Results"]
+    reasons = f1db_retirement_reasons(db, weekends[20].race_start.date(), sprint=False)
+    s = build_race_summary(
+        meta("race", 20),
+        jolpica,
+        openf1.session_result(c, BRAZIL_RACE),
+        [],
+        idmap_for(BRAZIL_RACE, 20),
+        None,
+        [],
+        reasons,
+    )
+    race = next(r for r in db["races"] if r["year"] == 2026 and r["round"] == 20)
+    expected = {int(x["driverNumber"]): x["reasonRetired"] for x in race["raceResults"] if x.get("reasonRetired")}
+    assert expected  # Brazil 2026 had retirements with reasons
+    by_number = {int(row["number"]): row["Driver"]["driverId"] for row in jolpica}
+    by_id = {r.driver_id: r for r in s.results}
+    assert {n: by_id[by_number[n]].retirement_reason for n in expected} == expected
+    retired = [r for r in s.results if r.classification == "dnf"]
+    assert all(r.status_text == "Retired" and r.retirement_reason for r in retired)  # statusText kept, as published
+    assert all(
+        r.retirement_reason is None for r in s.results if r.classification == "finished" and r.status_text == "Finished"
+    )
+
+
+def test_retirement_reason_missing_until_f1db_has_the_race(db):
+    from datetime import date
+
+    assert f1db_retirement_reasons(db, date(2026, 11, 22), sprint=False) == {}  # Las Vegas: not run yet
+    assert f1db_retirement_reasons(db, date(2026, 11, 8), sprint=True) == {}  # no sprint in Brazil
