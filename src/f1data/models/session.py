@@ -25,6 +25,18 @@ class Weather(Model):
 # ---------------------------------------------------------------- summary.json
 
 
+class SessionDriver(Model):
+    """Everyone who ran in the session (OpenF1), including practice-only drivers missing from drivers.json."""
+
+    id: str
+    number: int
+    code: str | None
+    first_name: str | None
+    last_name: str | None
+    team_id: str
+    colour: str | None
+
+
 class ClassifiedResult(Model):
     driver_id: str
     team_id: str
@@ -65,6 +77,7 @@ class RaceSummary(SessionFile):
     fastest_lap: FastestLap | None
     weather: Weather | None
     periods: list[Period]
+    drivers: list[SessionDriver]
 
 
 class QualifyingEntry(Model):
@@ -81,6 +94,7 @@ class QualifyingSummary(SessionFile):
     type: Literal["qualifying"] = "qualifying"
     results: list[QualifyingEntry]
     weather: Weather | None
+    drivers: list[SessionDriver]
 
 
 class PracticeEntry(Model):
@@ -97,6 +111,7 @@ class PracticeSummary(SessionFile):
     type: Literal["practice"] = "practice"
     results: list[PracticeEntry]
     weather: Weather | None
+    drivers: list[SessionDriver]
 
 
 Summary = Annotated[RaceSummary | QualifyingSummary | PracticeSummary, Field(discriminator="type")]
@@ -170,7 +185,9 @@ class Penalty(Model):
 
 class LapDeletion(Model):
     reason: Literal["trackLimits", "doubleYellow", "other"]
-    time_ms: int | None  # the deleted time, when the message gives one
+    lap: int | None  # "... LAP 5 ..."; null for "(NEXT LAP)" and similar
+    lap_time_ms: int | None  # the deleted time, when the message gives one
+    turn: int | None  # "AT TURN 5"
     reinstated: bool  # a later "WILL BE REINSTATED" for the same driver and time (or lap)
 
 
@@ -183,7 +200,8 @@ class RaceControlMessage(Model):
     sector: int | None
     driver_id: str | None
     driver_ids: list[str]  # every car the message names, in order
-    message: str
+    message: str  # raw, as published
+    text: str  # sentence case for display: "Car 14 (ALO) time 1:32.490 deleted - track limits at turn 5 ..."
     kind: Literal[
         "flag",
         "safetyCar",

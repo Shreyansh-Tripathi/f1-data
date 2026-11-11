@@ -311,7 +311,8 @@ def test_lap_deletion_reasons_and_reinstatement_matching():
         idmap,
     )
     got = [
-        (m.kind, m.deletion and (m.deletion.reason, m.deletion.time_ms, m.deletion.reinstated)) for m in out.messages
+        (m.kind, m.deletion and (m.deletion.reason, m.deletion.lap_time_ms, m.deletion.reinstated))
+        for m in out.messages
     ]
     assert got == [
         ("lapDeleted", ("trackLimits", 154639, False)),
@@ -337,7 +338,8 @@ def test_reinstatement_without_deletion_is_logged(caplog):
 def test_real_reinstatement_round_4_sprint(shared_client, idmap_for):
     out = build_race_control(meta("sprint", 4), openf1.race_control(shared_client, R4_SPRINT), idmap_for(R4_SPRINT, 4))
     deleted = next(m for m in out.messages if m.message.startswith("CAR 30 (LAW) TIME 1:37.515 DELETED"))
-    assert (deleted.driver_ids, deleted.deletion.time_ms, deleted.deletion.reinstated) == (["lawson"], 97515, True)
+    assert (deleted.driver_ids, deleted.deletion.lap_time_ms, deleted.deletion.reinstated) == (["lawson"], 97515, True)
+    assert (deleted.deletion.lap, deleted.deletion.turn) == (2, 6)  # "... AT TURN 6 LAP 2 12:05:58"
     assert kind_of(out, "CAR 30 (LAW) TIME 1:37.515 WILL BE REINSTATED").kind == "lapReinstated"
 
 
@@ -347,7 +349,13 @@ def test_code_only_car_resolved_through_session_acronyms(shared_client, idmap_fo
     out = build_race_control(meta("q", 5), openf1.race_control(shared_client, CANADA_Q), idmap)
     law = kind_of(out, "CAR LAW TIME DELETED - TRACK LIMITS")
     assert (law.kind, law.driver_ids) == ("lapDeleted", ["lawson"])
-    assert (law.deletion.reason, law.deletion.time_ms) == ("trackLimits", None)
+    assert (law.deletion.reason, law.deletion.lap_time_ms, law.deletion.lap, law.deletion.turn) == (
+        "trackLimits",
+        None,
+        None,  # "(NEXT LAP PIT)": no lap number
+        14,
+    )
+    assert law.text == "Car LAW time deleted - track limits at turn 14 (next lap pit) (Q2)"
     assert kind_of(out, "CAR LEC TIME 1:36.518 DELETED").driver_ids == ["leclerc"]
     assert kind_of(out, "CAR BEA TIME 1:39.643 DELETED").driver_ids == ["bearman"]
     # Words that look like codes ("LAPPED CARS MAY ...", "ALL CARS USE ...") resolve to nothing.
@@ -389,3 +397,68 @@ def test_retirement_reason_missing_until_f1db_has_the_race(db):
 
     assert f1db_retirement_reasons(db, date(2026, 11, 22), sprint=False) == {}  # Las Vegas: not run yet
     assert f1db_retirement_reasons(db, date(2026, 11, 8), sprint=True) == {}  # no sprint in Brazil
+
+
+# ---------------------------------------------------------------- display text
+
+
+@pytest.mark.parametrize(
+    ("message", "text"),
+    [
+        (
+            "CAR 14 (ALO) TIME 1:32.490 DELETED - TRACK LIMITS AT TURN 5 LAP 5 16:37:46",
+            "Car 14 (ALO) time 1:32.490 deleted - track limits at turn 5 lap 5 16:37:46",
+        ),
+        (
+            "FIA STEWARDS: TURN 4 INCIDENT INVOLVING CARS 4 (NOR) AND 81 (PIA) UNDER INVESTIGATION - COLLISION",
+            "FIA stewards: turn 4 incident involving cars 4 (NOR) and 81 (PIA) under investigation - collision",
+        ),
+        ("VSC DEPLOYED", "VSC deployed"),
+        ("SAFETY CAR IN THIS LAP", "Safety car in this lap"),
+        ("DRS ENABLED", "DRS enabled"),
+        ("DOUBLE YELLOW IN TRACK SECTOR 13", "Double yellow in track sector 13"),
+        ("RISK OF RAIN FOR THE F1 RACE IS 80%", "Risk of rain for the F1 race is 80%"),
+        (
+            "FIA STEWARDS: SQ1 INCIDENT INVOLVING CAR 1 (NOR) NOTED",
+            "FIA stewards: SQ1 incident involving car 1 (NOR) noted",
+        ),
+        ("CAR 5 (BOR) DSQ - SC INFRINGEMENT", "Car 5 (BOR) DSQ - SC infringement"),
+        ("WAVED BLUE FLAG FOR CAR 43 (COL) TIMED AT 16:11:36", "Waved blue flag for car 43 (COL) timed at 16:11:36"),
+    ],
+)
+def test_race_control_text_is_sentence_case(message, text):
+    row = {"date": "2026-01-01T15:00:00+00:00", "message": message, "category": "Other", "flag": None}
+    m = build_race_control(meta("race", 1), [row], ids.IdMap(drivers={}, teams={})).messages[0]
+    assert (m.text, m.message) == (text, message)
+
+
+def test_every_real_message_has_text(mexico_rc):
+    out, _ = mexico_rc
+    assert all(m.text and m.text.lower() == m.message.lower() for m in out.messages)  # only case changes
+
+
+# ---------------------------------------------------------------- session drivers
+
+
+def test_session_drivers_include_practice_only_rookies(season_data, shared_client, idmap_for):
+    from f1data.build.session import build_practice_summary
+
+    c, fp1 = shared_client, 11405  # Brazil FP1
+    drivers = openf1.drivers(c, fp1)
+    idmap = idmap_for(fp1, 20)
+    s = build_practice_summary(meta("fp1", 20), openf1.session_result(c, fp1), [], [], [], idmap, drivers)
+    by_id = {d.id: d for d in s.drivers}
+    assert len(s.drivers) == len(drivers)
+    assert {r.driver_id for r in s.results} <= set(by_id)  # every result row can be named
+    mini = by_id["gabriele_mini"]  # FP1 rookie: not in Jolpica, so not in drivers.json
+    assert (mini.number, mini.code, mini.first_name, mini.last_name, mini.team_id, mini.colour) == (
+        62,
+        "MIN",
+        "Gabriele",
+        "Mini",
+        "alpine",
+        "#00A1E8",
+    )
+    assert "gabriele_mini" not in season_data["known"]
+    norris = by_id["norris"]
+    assert (norris.code, norris.team_id, norris.colour) == ("NOR", "mclaren", "#F47600")

@@ -250,15 +250,15 @@ class Build:
         if is_race:
             grid = openf1.starting_grid(c, w.meeting_key, final=final) if code == "race" else None
             reasons = f1db_retirement_reasons(self.f1db(), w.race_start.date(), sprint=code == "sprint")
-            summary = build_race_summary(meta, jolpica_rows, results, weather, idmap, grid, rc, reasons)
+            summary = build_race_summary(meta, jolpica_rows, results, weather, idmap, grid, rc, reasons, drivers)
             self.write(f"{rel}/overtakes.json", build_overtakes(meta, openf1.overtakes(c, sk, final=final), idmap))
         elif code in ("q", "sq"):
             jq = self.jolpica_rows(self.qualifying, w.round, "QualifyingResults") if code == "q" else None
             codes = f1db_quali_codes(self.f1db(), w.race_start.date(), sprint=code == "sq")
-            summary = build_qualifying_summary(meta, results, weather, idmap, jq, codes)
+            summary = build_qualifying_summary(meta, results, weather, idmap, jq, codes, drivers)
             self.write(f"{rel}/quali.json", build_quali(meta, results, idmap, jq, codes))
         else:
-            summary = build_practice_summary(meta, results, laps, stints, weather, idmap)
+            summary = build_practice_summary(meta, results, laps, stints, weather, idmap, drivers)
         self.write(f"{rel}/laps.json", build_laps(meta, laps, position, intervals, idmap))
         self.write(f"{rel}/strategy.json", build_strategy(meta, stints, pit, rc, idmap, ids.parse_utc(s["date_start"])))
         self.write(f"{rel}/race-control.json", build_race_control(meta, rc, idmap))

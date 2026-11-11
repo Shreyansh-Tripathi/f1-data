@@ -5,6 +5,7 @@ from __future__ import annotations
 import bisect
 import logging
 import re
+from collections.abc import Collection
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from typing import Any
@@ -34,6 +35,7 @@ from f1data.models.session import (
     RaceControlMessage,
     RaceSummary,
     Range,
+    SessionDriver,
     Stint,
     Strategy,
     Weather,
@@ -105,6 +107,7 @@ def build_race_summary(
     starting_grid: Rows | None = None,
     race_control: Rows = (),
     retirement_reasons: dict[int, str] | None = None,
+    openf1_drivers: Rows = (),
 ) -> RaceSummary:
     """Race or sprint classification from Jolpica; OpenF1 flags cross-check DNF/DNS/DSQ."""
     by_driver = {idmap.driver(r["driver_number"]): r for r in openf1_results}
@@ -149,7 +152,24 @@ def build_race_summary(
         fastest_lap=fastest,
         weather=build_weather(weather),
         periods=build_periods(race_control, f"{meta.year}/{meta.round}/{meta.session}"),
+        drivers=build_session_drivers(openf1_drivers, idmap),
     )
+
+
+def build_session_drivers(openf1_drivers: Rows, idmap: IdMap) -> list[SessionDriver]:
+    return [
+        SessionDriver(
+            id=idmap.drivers[d["driver_number"]],
+            number=d["driver_number"],
+            code=d.get("name_acronym"),
+            first_name=d.get("first_name"),
+            last_name=d.get("last_name"),
+            team_id=idmap.teams[d["driver_number"]],
+            colour=f"#{d['team_colour'].upper()}" if d.get("team_colour") else None,
+        )
+        for d in sorted(openf1_drivers, key=lambda d: d["driver_number"])
+        if d["driver_number"] in idmap.drivers
+    ]
 
 
 # ---------------------------------------------------------------- SC / VSC / red-flag periods
@@ -239,6 +259,7 @@ def build_qualifying_summary(
     idmap: IdMap,
     jolpica_rows: Rows | None = None,
     f1db_codes: dict[int, str] | None = None,
+    openf1_drivers: Rows = (),
 ) -> QualifyingSummary:
     reached = _segments_reached(openf1_results, jolpica_rows, idmap)
     last = _last_segment(reached)
@@ -256,11 +277,22 @@ def build_qualifying_summary(
                 **_quali_status_fields(r, f1db_codes, meta),
             )
         )
-    return QualifyingSummary(**meta.fields(), results=results, weather=build_weather(weather))
+    return QualifyingSummary(
+        **meta.fields(),
+        results=results,
+        weather=build_weather(weather),
+        drivers=build_session_drivers(openf1_drivers, idmap),
+    )
 
 
 def build_practice_summary(
-    meta: SessionMeta, openf1_results: Rows, laps: Rows, stints: Rows, weather: Rows, idmap: IdMap
+    meta: SessionMeta,
+    openf1_results: Rows,
+    laps: Rows,
+    stints: Rows,
+    weather: Rows,
+    idmap: IdMap,
+    openf1_drivers: Rows = (),
 ) -> PracticeSummary:
     best: dict[int, dict[str, Any]] = {}
     count: dict[int, int] = {}
@@ -284,7 +316,12 @@ def build_practice_summary(
                 tyre=_tyre_on_lap(stints, n, b["lap_number"]) if b else None,
             )
         )
-    return PracticeSummary(**meta.fields(), results=results, weather=build_weather(weather))
+    return PracticeSummary(
+        **meta.fields(),
+        results=results,
+        weather=build_weather(weather),
+        drivers=build_session_drivers(openf1_drivers, idmap),
+    )
 
 
 # ---------------------------------------------------------------- laps.json
@@ -424,17 +461,19 @@ PENALTY_PATTERNS = [
 NOT_ISSUED = ("PENALTY SERVED", "WITHDRAWN", "REVOKED")
 # "... FOR CAR 23 (ALB) - REJOINING UNSAFELY (14:50:05)": the reason, without the trailing clock time.
 PENALTY_REASON = re.compile(r"FOR CAR \d+(?: \([A-Z]+\))? - (.+?)(?: \(\d{1,2}:\d{2}:\d{2}\))?$")
-# Kept upper case when sentence-casing reasons, along with driver codes ("(NOR)").
+# Kept upper case when sentence-casing, along with driver codes ("(NOR)") and session codes ("Q1", "SQ2", "F1").
 ACRONYMS = frozenset({"DRS", "VSC", "SC", "DSQ", "DNF", "FIA"})
 _REASON_TOKEN = re.compile(r"\(([A-Z]{3})\)|[A-Za-z0-9']+")
+_SESSION_CODE = re.compile(r"[A-Z]+\d+")
 
 
-def sentence_case(text: str) -> str:
-    """ "TRACK LIMITS (5TH OFFENCE)" -> "Track limits (5th offence)"; acronyms and "(NOR)" stay upper case."""
+def sentence_case(text: str, keep: Collection[str] = ()) -> str:
+    """ "TRACK LIMITS (5TH OFFENCE)" -> "Track limits (5th offence)"; acronyms, "(NOR)", session codes such as
+    "Q1" and any word in `keep` (e.g. a code-only "CAR LAW") stay upper case. Numbers are untouched."""
 
     def token(m: re.Match[str]) -> str:
         word = m.group(0)
-        if m.group(1) or word.upper() in ACRONYMS:
+        if m.group(1) or word.upper() in ACRONYMS or word in keep or _SESSION_CODE.fullmatch(word):
             return word.upper()
         return word.lower()
 
@@ -526,6 +565,7 @@ def build_race_control(meta: SessionMeta, rows: Rows, idmap: IdMap) -> RaceContr
                 "driver_id": idmap.driver(r.get("driver_number")),
                 "driver_ids": named_drivers(r, idmap),
                 "message": r["message"],
+                "text": sentence_case(r["message"], _code_only_cars(r["message"])),
                 "kind": race_control_kind(r, penalty),
                 "penalty": penalty,
                 "deletion": _deletion(r["message"]),
@@ -535,13 +575,24 @@ def build_race_control(meta: SessionMeta, rows: Rows, idmap: IdMap) -> RaceContr
     return RaceControl(**meta.fields(), messages=[RaceControlMessage(**e) for e in entries])
 
 
+def _code_only_cars(message: str) -> set[str]:
+    return {m.group(1) for m in NAMED_CARS.finditer(message) if not m.group(1)[0].isdigit()}
+
+
 def _deletion(message: str) -> dict[str, Any] | None:
     m = LAP_DELETED.search(message)
     if not m:
         return None
     why = m.group("why")
     reason = next((v for k, v in DELETION_REASONS.items() if why.startswith(k)), "other")
-    return {"reason": reason, "time_ms": clock_ms(m.group("time")), "reinstated": False}
+    lap, turn = re.search(r"\bLAP (\d+)\b", why), re.search(r"\bTURN (\d+)\b", why)
+    return {
+        "reason": reason,
+        "lap": int(lap.group(1)) if lap else None,
+        "lap_time_ms": clock_ms(m.group("time")),
+        "turn": int(turn.group(1)) if turn else None,
+        "reinstated": False,
+    }
 
 
 def _mark_reinstated(entries: list[dict[str, Any]]) -> None:
@@ -558,7 +609,7 @@ def _mark_reinstated(entries: list[dict[str, Any]]) -> None:
             if not deletion or d["kind"] != "lapDeleted" or d["driver_ids"][:1] != [driver]:
                 continue
             same_lap = lap is not None and re.search(rf"\bLAP {lap}\b", LAP_DELETED.search(d["message"])["why"])
-            if (time_ms is not None and deletion["time_ms"] == time_ms) or same_lap:
+            if (time_ms is not None and deletion["lap_time_ms"] == time_ms) or same_lap:
                 deletion["reinstated"] = matched = True
         if not matched:
             log.warning("race control: reinstatement with no matching deletion: %r", e["message"])

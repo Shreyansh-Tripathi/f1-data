@@ -47,6 +47,9 @@ def test_build_round_writes_contract(tmp_path):
         assert rel in got, rel
     summary = json.loads((out / "2026/20/race/summary.json").read_text())
     assert summary["type"] == "race" and summary["provisional"] is False
+    for session in ("race", "q", "fp1"):
+        s = json.loads((out / f"2026/20/{session}/summary.json").read_text())
+        assert {r["driverId"] for r in s["results"]} <= {d["id"] for d in s["drivers"]}
     assert summary["schemaVersion"] == 1
     manifest = json.loads((out / "manifest.json").read_text())
     assert set(manifest["files"]) == got - {"manifest.json"}
