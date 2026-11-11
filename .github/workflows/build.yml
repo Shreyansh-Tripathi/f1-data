@@ -2,8 +2,8 @@ name: build
 
 on:
   schedule:
-    - cron: "0 * * * 5,6,0,1" # hourly Fri–Mon (race weekends, Monday catch-up), UTC
-    - cron: "0 */6 * * 2-4" # every 6 h Tue–Thu
+    # Hourly; `f1data should-build` decides from the published calendar whether this run builds.
+    - cron: "0 * * * *"
   workflow_dispatch:
     inputs:
       year:
@@ -50,19 +50,36 @@ jobs:
             echo "manifest=$(sha256sum site/v1/manifest.json | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
           fi
 
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+
+      - run: uv sync --locked
+
+      # Scheduled runs build inside a round's window (first session to 72 h after the last), when the
+      # last full build is over 24 h old, or before the season is published. Manual runs always build.
+      - name: Decide whether to build
+        id: decide
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT" = workflow_dispatch ]; then
+            echo "build=true" >> "$GITHUB_OUTPUT"
+          else
+            decision=$(uv run f1data should-build --year "$(date -u +%Y)") # a crash fails the step
+            [[ "$decision" =~ ^(true|false)$ ]] || { echo "unexpected: $decision"; exit 1; }
+            echo "build=$decision" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Restore HTTP cache
+        if: steps.decide.outputs.build == 'true'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .cache
           key: f1data-http-${{ github.run_id }}
           restore-keys: f1data-http-
 
-      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
-
-      - run: uv sync --locked
-
       - name: Build
         id: build
+        if: steps.decide.outputs.build == 'true'
         continue-on-error: true # publish whatever validated files were written; fail the job afterwards
         env:
           YEAR: ${{ inputs.year }}
@@ -84,6 +101,7 @@ jobs:
       # gh-pages holds a single squashed commit: build an orphan commit from site/ and force-push it,
       # but only when manifest.json changed.
       - name: Publish to gh-pages
+        if: steps.decide.outputs.build == 'true'
         env:
           BEFORE: ${{ steps.pages.outputs.manifest }}
         run: |
@@ -107,5 +125,5 @@ jobs:
           echo "published $commit"
 
       - name: Fail if the build had errors
-        if: steps.build.outcome == 'failure'
+        if: steps.decide.outputs.build == 'true' && steps.build.outcome == 'failure'
         run: exit 1

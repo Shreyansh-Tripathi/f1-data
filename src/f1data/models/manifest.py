@@ -10,3 +10,4 @@ class ManifestEntry(Model):
 
 class Manifest(OutputFile):
     files: dict[str, ManifestEntry]
+    last_full_build_at: Utc | None  # last whole-season build without failures (drives the 24 h fallback)

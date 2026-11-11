@@ -27,6 +27,7 @@ from f1data.build.session import (
     build_strategy,
 )
 from f1data.build.standings import build_driver_standings, build_team_standings
+from f1data.calendar import should_build
 from f1data.http import HttpClient, HttpError
 from f1data.io import is_complete, read_json, write_model
 from f1data.manifest import write_manifest
@@ -103,7 +104,8 @@ class Build:
                     self.guarded(f"round {w.round} {code}", lambda w=w, code=code: self.build_session(w, code))
         if self.lag_changed:
             write_model(self.lag_file, PublishLag(generated_at=self.now, sessions=self.lag))
-        write_manifest(self.out, self.now)
+        full_build = round_filter is None and session_filter is None and not self.failures
+        write_manifest(self.out, self.now, full_build)
         log.info("done: %d files written, %d failures, requests %s", self.written, self.failures, self.c.request_counts)
 
     # ------------------------------------------------------------------ season-level
@@ -269,6 +271,16 @@ def session_end(session: dict[str, Any], race_control: list[dict[str, Any]]) -> 
     return max(flags) if flags else ids.parse_utc(session["date_end"])
 
 
+def should_build_command(args: argparse.Namespace, now: datetime) -> int:
+    season = read_json(args.out / str(args.year or now.year) / "season.json")
+    manifest = read_json(args.out / "manifest.json") or {}
+    last = manifest.get("lastFullBuildAt")
+    decision, reason = should_build(now, season, ids.parse_utc(last) if last else None)
+    log.info("should-build: %s (%s)", str(decision).lower(), reason)
+    print(str(decision).lower())
+    return 0
+
+
 def main(argv: list[str] | None = None, *, client: HttpClient | None = None, now: datetime | None = None) -> int:
     parser = argparse.ArgumentParser(prog="f1data")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -282,12 +294,18 @@ def main(argv: list[str] | None = None, *, client: HttpClient | None = None, now
     b.add_argument("--cache", type=Path, default=ROOT / ".cache")
     b.add_argument("--lag-file", type=Path, help="publish-lag record (default: <out>/../meta/lag.json)")
     b.add_argument("-v", "--verbose", action="store_true")
+    sb = sub.add_parser("should-build", help="print true/false: should a scheduled run build now?")
+    sb.add_argument("--year", type=int, help="season to check (default: current UTC year)")
+    sb.add_argument("--out", type=Path, default=ROOT / "site" / "v1")
+    sb.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args(argv)
 
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO, format="%(levelname)s %(name)s: %(message)s"
     )
     logging.getLogger("httpx").setLevel(logging.WARNING)
+    if args.command == "should-build":
+        return should_build_command(args, now or datetime.now(UTC))
     http = client or HttpClient(args.cache, offline=args.offline)
     lag_file = args.lag_file or args.out.parent / "meta" / "lag.json"
     clock = (lambda: now) if now else (lambda: datetime.now(UTC))

@@ -46,3 +46,13 @@ def test_is_complete(tmp_path):
     assert not is_complete(d)
     (d / "summary.json").write_text(json.dumps({"provisional": False}))
     assert is_complete(d)
+
+
+def test_last_full_build_recorded_only_by_full_builds(tmp_path):
+    (tmp_path / "a.json").write_text("{}")
+    write_manifest(tmp_path, T0, full_build=True)
+    assert json.loads((tmp_path / "manifest.json").read_text())["lastFullBuildAt"] == "2026-11-10T00:00:00Z"
+    write_manifest(tmp_path, T1)  # partial build keeps the previous time
+    assert build_manifest(tmp_path, T1).last_full_build_at == T0
+    write_manifest(tmp_path, T1, full_build=True)
+    assert build_manifest(tmp_path, T1).last_full_build_at == T1

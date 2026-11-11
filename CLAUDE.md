@@ -6,7 +6,7 @@ Python pipeline that turns free F1 data sources into versioned static JSON, publ
 
 - Completed sessions only. No live timing.
 - This repo is **public** (free Actions minutes + free Pages).
-- Runs on GitHub Actions cron; output served from GitHub Pages under `/v1/`.
+- Runs on GitHub Actions cron (hourly, calendar-aware: see CI and publishing); output served from GitHub Pages under `/v1/`.
 - Actions runs start cold: restore prior output by checking out `gh-pages` into `site/`, and restore `.cache/` with `actions/cache`.
 - The app only reads our JSON. Never expose source-specific field names in output.
 - No FastF1: it needs a paid F1 TV subscription (see Findings).
@@ -25,7 +25,7 @@ Never send auth tokens. Never re-host team radio audio; store only F1's URL.
 ## Output contract (`site/v1/`)
 
 ```
-manifest.json                       # {files: {path: {hash, updatedAt}}, schemaVersion, generatedAt}
+manifest.json                       # {files: {path: {hash, updatedAt}}, lastFullBuildAt, schemaVersion, generatedAt}
 {year}/season.json                  # rounds (name, shortName, winner), sessions (type, utc start), circuit ids, status
 {year}/standings/drivers.json       # WDC after each round; entries carry `active`
 {year}/standings/teams.json         # WCC after each round
@@ -98,13 +98,19 @@ uv run f1data build --year 2026
 
 - `.github/workflows/ci.yml`: on push to `main` and on PRs, runs `uv sync --locked`, `ruff check`, `ruff format --check` and `pytest`. Tests are offline: they replay `tests/fixtures/http/` through `httpx.MockTransport`. No fixture may exceed 5 MB (enforced by `tests/test_fixture_sizes.py`).
 - `.github/workflows/build.yml`:
-  - **Schedule (UTC):** hourly Fri–Mon (`0 * * * 5,6,0,1`), every 6 h Tue–Thu (`0 */6 * * 2-4`).
+  - **Schedule (UTC):** hourly (`0 * * * *`), calendar-aware. After checking out `gh-pages` and `uv sync`, `f1data should-build --year <current UTC year>` prints `true`/`false` (pure function `f1data/calendar.py:should_build`), and every later step runs only on `true`. It is `true` when:
+    - `site/v1/<year>/season.json` doesn't exist yet (new season not published);
+    - now is inside a round's window: its first session start to 72 h after its last session end (a session with no end counts at its start; cancelled events are not rounds);
+    - `manifest.json` `lastFullBuildAt` is missing or more than 24 h old.
+
+    `lastFullBuildAt` is set by a build with no `--round`/`--session` filter and no failures, so a failing build is retried hourly. Every full build changes it, so builds inside a window publish every hour.
+    `workflow_dispatch` always builds. If `should-build` errors or prints anything else, the run fails rather than skipping.
   - **Manual runs:** `workflow_dispatch` with inputs `year`, `round`, `session`, `force`.
   - **Settings:** `permissions: contents: write`; concurrency group `build-data` without cancel-in-progress (runs queue); 60 min timeout.
   - **Steps:**
     1. Check out `gh-pages` into `site/`.
-    2. Restore `.cache/` with `actions/cache`.
-    3. `uv sync --locked`.
+    2. `uv sync --locked`, then decide (`should-build`, or `true` for manual runs).
+    3. Restore `.cache/` with `actions/cache`.
     4. `f1data build`. If it fails, the steps continue and the job fails at the end.
     5. Publish, but only if `site/v1/manifest.json` changed: write `site/.nojekyll`, build an orphan commit from `site/` with a temporary index, and force-push it to `gh-pages`. The branch always holds one squashed commit.
   - All actions are pinned to commit SHAs, with the exact version in a comment.

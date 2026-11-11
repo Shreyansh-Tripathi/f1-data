@@ -50,6 +50,7 @@ def test_build_round_writes_contract(tmp_path):
     assert summary["schemaVersion"] == 1
     manifest = json.loads((out / "manifest.json").read_text())
     assert set(manifest["files"]) == got - {"manifest.json"}
+    assert manifest["lastFullBuildAt"] is None  # --round 20 is not a full build
 
 
 def test_no_source_field_names_leak(tmp_path):
@@ -116,3 +117,13 @@ def test_publish_lag_not_in_manifest(tmp_path):
     _, out = run(tmp_path, FINAL_NOW)
     manifest = json.loads((out / "manifest.json").read_text())
     assert not any(p.startswith("meta/") or p.endswith("lag.json") for p in manifest["files"])
+
+
+def test_failed_full_build_does_not_count_as_full(tmp_path):
+    # Whole season from fixtures: rounds without recorded fixtures fail, so the 24 h fallback stays armed.
+    out = tmp_path / "site"
+    code = main(
+        ["build", "--year", "2026", "--out", str(out)], client=fixture_client(tmp_path / "cache"), now=FINAL_NOW
+    )
+    assert code == 1
+    assert json.loads((out / "manifest.json").read_text())["lastFullBuildAt"] is None
