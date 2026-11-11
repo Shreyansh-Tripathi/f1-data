@@ -26,6 +26,7 @@ MEETINGS = (1299, 1296)  # Brazil (latest race), Singapore (latest sprint weeken
 LAST_ROUND = 20
 RED_FLAG_RACE = 11404  # Mexico 2026
 VSC_TO_SC_RACE = 11731  # Kuala Lumpur 2026 (round 16)
+RED_FLAG_PRACTICE = 11229  # round 1 FP3
 CODE_ONLY_QUALI = 11287  # Canada 2026 qualifying (round 5)
 REINSTATED_SPRINT = 11275  # round 4 sprint
 QUALI_EDGE_CASES = (11271, 11276, 11400)  # round 4 sq and q, round 19 q (round 17 is recorded with Singapore)
@@ -103,6 +104,8 @@ def main() -> None:
     # Kuala Lumpur race: VSC upgraded to a safety car.
     for fetch in (openf1.race_control, openf1.drivers):
         fetch(client, VSC_TO_SC_RACE)
+    # Practice with a VSC ended by a red flag, then a second red flag (periods outside races).
+    openf1.race_control(client, RED_FLAG_PRACTICE)
     # Canada qualifying: cars named by code only ("CAR LAW TIME DELETED"); round 4 sprint: a reinstated lap time.
     for sk in (CODE_ONLY_QUALI, REINSTATED_SPRINT):
         for fetch in (openf1.race_control, openf1.drivers):

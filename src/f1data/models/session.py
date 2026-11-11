@@ -69,6 +69,7 @@ class Period(Model):
     end_time: Utc
     start_message: str
     end_message: str  # e.g. "VSC ENDING", "SESSION STARTED", or "CHEQUERED FLAG" when open at the finish
+    # Laps are null outside races and sprints (race control has no lap numbers there).
 
 
 class RaceSummary(SessionFile):
@@ -95,6 +96,7 @@ class QualifyingSummary(SessionFile):
     results: list[QualifyingEntry]
     weather: Weather | None
     drivers: list[SessionDriver]
+    periods: list[Period]
 
 
 class PracticeEntry(Model):
@@ -112,6 +114,7 @@ class PracticeSummary(SessionFile):
     results: list[PracticeEntry]
     weather: Weather | None
     drivers: list[SessionDriver]
+    periods: list[Period]
 
 
 Summary = Annotated[RaceSummary | QualifyingSummary | PracticeSummary, Field(discriminator="type")]

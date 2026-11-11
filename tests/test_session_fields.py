@@ -462,3 +462,80 @@ def test_session_drivers_include_practice_only_rookies(season_data, shared_clien
     assert "gabriele_mini" not in season_data["known"]
     norris = by_id["norris"]
     assert (norris.code, norris.team_id, norris.colour) == ("NOR", "mclaren", "#F47600")
+
+
+# ---------------------------------------------------------------- periods outside races
+
+
+def test_qualifying_periods_brazil_red_flags_resumed_and_not(shared_client):
+    periods = build_periods(openf1.race_control(shared_client, 11408), race=False)  # Brazil Q
+    got = [(p.kind, p.start_time.strftime("%H:%M:%S"), p.end_time.strftime("%H:%M:%S"), p.end_message) for p in periods]
+    assert got == [
+        ("red", "18:02:23", "19:26:00", "SESSION STARTED"),  # Q1, rain: resumed after 84 min
+        ("red", "20:03:18", "20:05:47", "SESSION FINISHED"),  # Q2 WILL NOT BE RESUMED
+    ]
+    assert all(p.start_lap is None and p.end_lap is None for p in periods)  # no laps outside races
+
+
+def test_qualifying_periods_continue_past_each_segment_chequered_flag():
+    periods = build_periods(
+        [
+            rc("05:00:00", "SESSION STARTED", None, "SessionStatus"),
+            rc("05:26:29", "CHEQUERED FLAG", None, "Flag", "CHEQUERED"),  # end of Q1
+            rc("05:34:00", "SESSION STARTED", None, "SessionStatus"),
+            rc("06:02:14", "RED FLAG", None, "Flag", "RED"),  # Q2
+            rc("06:10:00", "SESSION STARTED", None, "SessionStatus"),
+            rc("06:19:47", "CHEQUERED FLAG", None, "Flag", "CHEQUERED"),
+        ],
+        race=False,
+    )
+    assert spans(periods) == [("red", None, None, "SESSION STARTED")]
+    # The same messages as a race would stop at the first chequered flag.
+    assert (
+        build_periods(
+            [
+                rc("05:26:29", "CHEQUERED FLAG", None, "Flag", "CHEQUERED"),
+                rc("06:02:14", "RED FLAG", None, "Flag", "RED"),
+            ]
+        )
+        == []
+    )
+
+
+def test_practice_periods_vsc_ended_by_red_flag(shared_client):
+    periods = build_periods(openf1.race_control(shared_client, 11229), race=False)  # round 1 FP3
+    got = [(p.kind, p.start_time.strftime("%H:%M:%S"), p.end_time.strftime("%H:%M:%S"), p.end_message) for p in periods]
+    assert got == [
+        ("vsc", "02:00:23", "02:03:42", "RED FLAG"),
+        ("red", "02:03:42", "02:11:00", "SESSION STARTED"),
+        ("red", "02:37:13", "02:46:00", "SESSION STARTED"),
+    ]
+
+
+def test_qualifying_and_practice_summaries_carry_periods(season_data, shared_client, idmap_for):
+    from f1data.build.session import build_practice_summary
+
+    c = shared_client
+    q = build_qualifying_summary(
+        meta("q", 20),
+        openf1.session_result(c, 11408),
+        [],
+        idmap_for(11408, 20),
+        None,
+        None,
+        [],
+        openf1.race_control(c, 11408),
+    )
+    assert [p.kind for p in q.periods] == ["red", "red"]
+    fp1 = build_practice_summary(
+        meta("fp1", 20),
+        openf1.session_result(c, 11405),
+        [],
+        [],
+        [],
+        idmap_for(11405, 20),
+        [],
+        openf1.race_control(c, 11405),
+    )
+    assert isinstance(fp1.periods, list)
+    assert "periods" in fp1.model_dump(mode="json", by_alias=True)

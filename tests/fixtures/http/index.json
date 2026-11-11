@@ -391,6 +391,10 @@
   "file": "api_openf1_org_v1_position_session_key_11412.json",
   "kind": "json"
  },
+ "https://api.openf1.org/v1/race_control?session_key=11229": {
+  "file": "api_openf1_org_v1_race_control_session_key_11229.json",
+  "kind": "json"
+ },
  "https://api.openf1.org/v1/race_control?session_key=11275": {
   "file": "api_openf1_org_v1_race_control_session_key_11275.json",
   "kind": "json"

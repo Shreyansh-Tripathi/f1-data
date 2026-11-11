@@ -156,6 +156,10 @@ def build_race_summary(
     )
 
 
+def _session_periods(meta: SessionMeta, race_control: Rows) -> list[Period]:
+    return build_periods(race_control, f"{meta.year}/{meta.round}/{meta.session}", race=False)
+
+
 def build_session_drivers(openf1_drivers: Rows, idmap: IdMap) -> list[SessionDriver]:
     return [
         SessionDriver(
@@ -192,13 +196,15 @@ def is_red_flag(r: dict[str, Any]) -> bool:
     return r["message"].startswith("RED FLAG") or (r.get("category") == "Flag" and r.get("flag") == "RED")
 
 
-def build_periods(race_control: Rows, where: str = "") -> list[Period]:
+def build_periods(race_control: Rows, where: str = "", race: bool = True) -> list[Period]:
     """SC, VSC and red-flag periods from race control, in time order.
 
     - SC: SAFETY CAR DEPLOYED .. SAFETY CAR IN THIS LAP; VSC: VSC DEPLOYED .. VSC ENDING. A deployment of the
       other kind while one is open ends it there (VSC upgraded to SC, or SC to VSC).
     - Red flag: a RED FLAG message .. the next SESSION STARTED (the restart). It ends any open SC/VSC.
-    - Anything still open at the chequered flag (or SESSION FINISHED) ends there.
+    - Anything still open at the chequered flag (or SESSION FINISHED) ends there. In a race that is the end;
+      in qualifying and practice (`race=False`) each segment ends this way and processing continues, so an
+      unresumed red flag ("Q2 WILL NOT BE RESUMED") ends at SESSION FINISHED.
     Other SC/VSC wording that isn't a known non-period message is logged, not guessed at.
     """
     periods: list[Period] = []
@@ -218,7 +224,9 @@ def build_periods(race_control: Rows, where: str = "") -> list[Period]:
         ):
             close("track", t, lap, m)
             close("red", t, lap, m)
-            break
+            if race:
+                break
+            continue
         if is_red_flag(r):
             close("track", t, lap, m)
             open_.setdefault("red", {"kind": "red", "start_lap": lap, "start_time": t, "start_message": m})
@@ -260,6 +268,7 @@ def build_qualifying_summary(
     jolpica_rows: Rows | None = None,
     f1db_codes: dict[int, str] | None = None,
     openf1_drivers: Rows = (),
+    race_control: Rows = (),
 ) -> QualifyingSummary:
     reached = _segments_reached(openf1_results, jolpica_rows, idmap)
     last = _last_segment(reached)
@@ -282,6 +291,7 @@ def build_qualifying_summary(
         results=results,
         weather=build_weather(weather),
         drivers=build_session_drivers(openf1_drivers, idmap),
+        periods=_session_periods(meta, race_control),
     )
 
 
@@ -293,6 +303,7 @@ def build_practice_summary(
     weather: Rows,
     idmap: IdMap,
     openf1_drivers: Rows = (),
+    race_control: Rows = (),
 ) -> PracticeSummary:
     best: dict[int, dict[str, Any]] = {}
     count: dict[int, int] = {}
@@ -321,6 +332,7 @@ def build_practice_summary(
         results=results,
         weather=build_weather(weather),
         drivers=build_session_drivers(openf1_drivers, idmap),
+        periods=_session_periods(meta, race_control),
     )
 
 
