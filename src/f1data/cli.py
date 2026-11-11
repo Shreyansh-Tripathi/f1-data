@@ -30,6 +30,7 @@ from f1data.build.standings import build_driver_standings, build_team_standings
 from f1data.http import HttpClient, HttpError
 from f1data.io import is_complete, read_json, write_model
 from f1data.manifest import write_manifest
+from f1data.models.meta import PublishLag, SessionLag
 from f1data.sources import f1db, jolpica, multiviewer, openf1
 
 log = logging.getLogger("f1data")
@@ -39,12 +40,26 @@ SESSION_CODES = ["fp1", "fp2", "fp3", "sq", "sprint", "q", "race"]
 
 
 class Build:
-    def __init__(self, client: HttpClient, out: Path, year: int, now: datetime, force: bool) -> None:
+    def __init__(
+        self,
+        client: HttpClient,
+        out: Path,
+        year: int,
+        now: datetime,
+        force: bool,
+        lag_file: Path,
+        clock: Callable[[], datetime],
+    ) -> None:
         self.c = client
         self.out = out
         self.year = year
         self.now = now
         self.force = force
+        self.lag_file = lag_file
+        self.clock = clock
+        previous = read_json(lag_file)
+        self.lag = PublishLag.model_validate(previous).sessions if previous else {}
+        self.lag_changed = False
         self.failures = 0
         self.written = 0
         self._f1db: dict[str, Any] | None = None
@@ -86,6 +101,8 @@ class Build:
             for code in SESSION_CODES:
                 if session_filter in (None, code) and code in w.sessions:
                     self.guarded(f"round {w.round} {code}", lambda w=w, code=code: self.build_session(w, code))
+        if self.lag_changed:
+            write_model(self.lag_file, PublishLag(generated_at=self.now, sessions=self.lag))
         write_manifest(self.out, self.now)
         log.info("done: %d files written, %d failures, requests %s", self.written, self.failures, self.c.request_counts)
 
@@ -239,7 +256,17 @@ class Build:
         self.write(f"{rel}/strategy.json", build_strategy(meta, stints, pit, rc, idmap, ids.parse_utc(s["date_start"])))
         self.write(f"{rel}/race-control.json", build_race_control(meta, rc, idmap))
         # summary last: its presence (non-provisional) marks the session complete.
+        first_publish = not (self.out / rel / "summary.json").exists()
         self.write(f"{rel}/summary.json", summary)
+        if first_publish and rel not in self.lag:
+            self.lag[rel] = SessionLag(session_end=session_end(s, rc), first_published_at=self.clock())
+            self.lag_changed = True
+
+
+def session_end(session: dict[str, Any], race_control: list[dict[str, Any]]) -> datetime:
+    """Last chequered flag (races overrun their slot, e.g. after a red flag), else the scheduled end."""
+    flags = [ids.parse_utc(r["date"]) for r in race_control if (r.get("flag") or "").upper() == "CHEQUERED"]
+    return max(flags) if flags else ids.parse_utc(session["date_end"])
 
 
 def main(argv: list[str] | None = None, *, client: HttpClient | None = None, now: datetime | None = None) -> int:
@@ -253,6 +280,7 @@ def main(argv: list[str] | None = None, *, client: HttpClient | None = None, now
     b.add_argument("--offline", action="store_true", help="serve only from .cache/")
     b.add_argument("--out", type=Path, default=ROOT / "site" / "v1")
     b.add_argument("--cache", type=Path, default=ROOT / ".cache")
+    b.add_argument("--lag-file", type=Path, help="publish-lag record (default: <out>/../meta/lag.json)")
     b.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args(argv)
 
@@ -261,7 +289,9 @@ def main(argv: list[str] | None = None, *, client: HttpClient | None = None, now
     )
     logging.getLogger("httpx").setLevel(logging.WARNING)
     http = client or HttpClient(args.cache, offline=args.offline)
-    build = Build(http, args.out, args.year, now or datetime.now(UTC), args.force)
+    lag_file = args.lag_file or args.out.parent / "meta" / "lag.json"
+    clock = (lambda: now) if now else (lambda: datetime.now(UTC))
+    build = Build(http, args.out, args.year, now or datetime.now(UTC), args.force, lag_file, clock)
     build.run(args.round, args.session)
     return 1 if build.failures else 0
 

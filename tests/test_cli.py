@@ -75,3 +75,44 @@ def test_provisional_sessions_are_rebuilt(tmp_path):
     run(tmp_path, FINAL_NOW)
     summary = json.loads((out / "2026/20/race/summary.json").read_text())
     assert summary["provisional"] is False
+
+
+def lag(tmp_path):
+    path = tmp_path / "meta" / "lag.json"  # next to the output root, outside v1/
+    return json.loads(path.read_text()) if path.exists() else None
+
+
+def test_publish_lag_recorded_on_first_publish(tmp_path):
+    run(tmp_path, FINAL_NOW)
+    sessions = lag(tmp_path)["sessions"]
+    assert set(sessions) == {"2026/20/fp1", "2026/20/fp2", "2026/20/fp3", "2026/20/q", "2026/20/race"}
+    # Session end is the last chequered flag (qualifying has more than one).
+    assert sessions["2026/20/race"] == {
+        "sessionEnd": "2026-11-08T18:38:46Z",
+        "firstPublishedAt": "2026-11-12T00:00:00Z",
+    }
+    assert sessions["2026/20/q"]["sessionEnd"] == "2026-11-07T20:27:00Z"
+    assert sessions["2026/20/fp1"]["sessionEnd"] == "2026-11-06T16:30:00Z"
+
+
+def test_publish_lag_keeps_first_time(tmp_path):
+    run(tmp_path, EARLY_NOW)  # provisional first publish
+    first = lag(tmp_path)["sessions"]["2026/20/race"]["firstPublishedAt"]
+    assert first == "2026-11-09T12:00:00Z"
+    before = (tmp_path / "meta" / "lag.json").read_bytes()
+    run(tmp_path, FINAL_NOW)  # final rebuild of the same sessions
+    run(tmp_path, FINAL_NOW, "--force")
+    assert (tmp_path / "meta" / "lag.json").read_bytes() == before
+
+
+def test_publish_lag_skips_sessions_published_before_tracking(tmp_path):
+    run(tmp_path, FINAL_NOW)
+    (tmp_path / "meta" / "lag.json").unlink()
+    run(tmp_path, FINAL_NOW, "--force")  # summaries already exist: their first publish time is unknown
+    assert lag(tmp_path) is None
+
+
+def test_publish_lag_not_in_manifest(tmp_path):
+    _, out = run(tmp_path, FINAL_NOW)
+    manifest = json.loads((out / "manifest.json").read_text())
+    assert not any(p.startswith("meta/") or p.endswith("lag.json") for p in manifest["files"])

@@ -36,6 +36,8 @@ circuits/{circuitId}.json           # polyline, corners, rotation, length (OpenF
 {year}/{round}/{session}/summary.json | laps.json | strategy.json | race-control.json | quali.json | overtakes.json | replay.json | radio.json
 ```
 
+Outside `v1/`, not in the manifest and not part of the app contract: `meta/lag.json` (`{sessions: {"{year}/{round}/{session}": {sessionEnd, firstPublishedAt}}}`) records publish lag.
+
 Session codes: `fp1 fp2 fp3 sq sprint q race`. `summary.json` has a distinct shape per session type (practice, qualifying, race/sprint), discriminated by `type`. `overtakes.json` exists for race and sprint only. Session files carry `provisional`.
 
 ## Rules
@@ -63,6 +65,7 @@ Session codes: `fp1 fp2 fp3 sq sprint q race`. `summary.json` has a distinct sha
 - **Standings** keep drivers no longer racing, with `active: false`.
 - **Driver identity.** `drivers.json` takes code, nationality and date of birth from Jolpica, falling back to F1DB per field. Number, colour and headshot come from OpenF1 (latest race session); drivers without OpenF1 data keep Jolpica's race number and have null colour/headshot.
 - **Circuits.** Coordinates stay in the OpenF1 location frame as integers; `rotation` is passed through and applied in the app.
+- **Publish lag.** The first time a build writes a session's `summary.json` (provisional or not), it adds `{sessionEnd, firstPublishedAt}` to `meta/lag.json`. `sessionEnd` is the last OpenF1 `CHEQUERED` flag, else the scheduled `date_end`. `firstPublishedAt` is when the build wrote the file; the push and Pages deploy follow about 1–2 min later. Entries are never updated; sessions published before tracking started (summary already present) get no entry.
 - **404s.** Every OpenF1 404 mapped to `[]` is logged at WARNING with its URL.
 
 ## Stack and layout
