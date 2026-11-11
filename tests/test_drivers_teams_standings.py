@@ -4,7 +4,7 @@ import pytest
 
 from f1data.build import ids
 from f1data.build.drivers import TEAM_SHORT_NAMES, active_driver_ids, build_drivers, build_teams
-from f1data.build.standings import build_driver_standings, build_team_standings
+from f1data.build.standings import build_driver_standings, build_team_standings, title_context
 from f1data.sources import f1db, jolpica, openf1
 
 NOW = datetime(2026, 11, 10, tzinfo=UTC)
@@ -18,23 +18,32 @@ def latest(season_data, shared_client):
 
 
 def test_driver_standings_keep_inactive_with_flag(season_data, shared_client):
-    per_round = {rnd: jolpica.driver_standings(shared_client, 2026, rnd) for rnd in (19, 20)}
+    per_round = {rnd: jolpica.driver_standings(shared_client, 2026, rnd) for rnd in range(1, 21)}
     active = active_driver_ids(season_data["results"])
-    s = build_driver_standings(2026, per_round, active, NOW)
+    ctx = title_context(season_data["schedule"], season_data["results"], season_data["sprint"])
+    s = build_driver_standings(2026, per_round, active, ctx, NOW)
     r20 = s.rounds[-1]
-    assert [r.round for r in s.rounds] == [19, 20]
+    assert [r.round for r in s.rounds] == list(range(1, 21))
     assert len(r20.entries) == 25
     assert sum(e.active for e in r20.entries) == 22
     inactive = [e for e in r20.entries if not e.active]
     assert {e.driver_id for e in inactive} == {e["Driver"]["driverId"] for e in per_round[20]} - active
     assert r20.entries[0].position == 1 and r20.entries[0].points > 0
+    # 2026: Antonelli 390 vs 279 after round 20 with 75 points left; already decided after round 19.
+    leader = r20.entries[0]
+    assert (leader.driver_id, leader.title_status, leader.clinched_at_round) == ("antonelli", "champion", 19)
+    assert {e.title_status for e in r20.entries[1:]} == {"out"}
+    assert all(e.title_status is None and e.clinched_at_round is None for e in s.rounds[0].entries)
 
 
-def test_team_standings(shared_client):
-    per_round = {20: jolpica.constructor_standings(shared_client, 2026, 20)}
-    s = build_team_standings(2026, per_round, NOW)
+def test_team_standings(season_data, shared_client):
+    per_round = {20: jolpica.constructor_standings(shared_client, 2026, 20)}  # only round 20: clinched there
+    ctx = title_context(season_data["schedule"], season_data["results"], season_data["sprint"])
+    s = build_team_standings(2026, per_round, ctx, NOW)
     assert len(s.rounds[0].entries) == 11
     assert s.rounds[0].entries[0].position == 1
+    mercedes = s.rounds[0].entries[0]
+    assert (mercedes.team_id, mercedes.title_status, mercedes.clinched_at_round) == ("mercedes", "champion", 20)
 
 
 @pytest.fixture(scope="module")

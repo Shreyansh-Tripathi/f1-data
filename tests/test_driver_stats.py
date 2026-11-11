@@ -56,6 +56,7 @@ def test_career_totals_from_f1db(stats):
     assert alonso is not None
     assert alonso.championships == 2
     assert alonso.starts > 400
+    assert (alonso.poles, alonso.fastest_laps) == (22, 26)  # F1DB totalPolePositions / totalFastestLaps
     assert sum(s.career is not None for s in by_id.values()) >= 22
 
 

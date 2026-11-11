@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+from typing import Literal
+
 from f1data.models.base import Model, OutputFile
+
+TitleStatus = Literal["champion", "contender", "out"]
 
 
 class DriverStanding(Model):
@@ -10,6 +14,8 @@ class DriverStanding(Model):
     points: float
     wins: int
     active: bool
+    title_status: TitleStatus | None  # latest round only
+    clinched_at_round: int | None  # on the champion's latest-round entry
 
 
 class TeamStanding(Model):
@@ -17,6 +23,8 @@ class TeamStanding(Model):
     team_id: str
     points: float
     wins: int
+    title_status: TitleStatus | None  # latest round only
+    clinched_at_round: int | None  # on the champion's latest-round entry
 
 
 class DriverStandingsRound(Model):

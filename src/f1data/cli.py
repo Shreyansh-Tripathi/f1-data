@@ -26,7 +26,7 @@ from f1data.build.session import (
     build_race_summary,
     build_strategy,
 )
-from f1data.build.standings import build_driver_standings, build_team_standings
+from f1data.build.standings import build_driver_standings, build_team_standings, title_context
 from f1data.calendar import should_build
 from f1data.http import HttpClient, HttpError
 from f1data.io import is_complete, read_json, write_model
@@ -183,8 +183,9 @@ class Build:
             drivers[rnd] = jolpica.driver_standings(self.c, y, rnd, final=final)
             teams[rnd] = jolpica.constructor_standings(self.c, y, rnd, final=final)
         active = active_driver_ids(self.results)
-        self.write(f"{y}/standings/drivers.json", build_driver_standings(y, drivers, active, self.now))
-        self.write(f"{y}/standings/teams.json", build_team_standings(y, teams, self.now))
+        ctx = title_context(self.schedule, self.results, self.sprint)
+        self.write(f"{y}/standings/drivers.json", build_driver_standings(y, drivers, active, ctx, self.now))
+        self.write(f"{y}/standings/teams.json", build_team_standings(y, teams, ctx, self.now))
 
     def f1db(self) -> dict[str, Any]:
         if self._f1db is None:

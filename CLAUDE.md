@@ -27,8 +27,8 @@ Never send auth tokens. Never re-host team radio audio; store only F1's URL.
 ```
 manifest.json                       # {files: {path: {hash, updatedAt}}, lastFullBuildAt, schemaVersion, generatedAt}
 {year}/season.json                  # rounds (name, shortName, winner), sessions (type, utc start), circuit ids, status
-{year}/standings/drivers.json       # WDC after each round; entries carry `active`
-{year}/standings/teams.json         # WCC after each round
+{year}/standings/drivers.json       # WDC after each round; entries carry `active`, `titleStatus`, `clinchedAtRound`
+{year}/standings/teams.json         # WCC after each round; entries carry `titleStatus`, `clinchedAtRound`
 {year}/drivers.json                 # number, code, name, nationality, team, colour, headshot
 {year}/driver-stats.json            # season race stats + separate sprint stats + career totals + per-round results
 {year}/teams.json                   # name, shortName, colour, drivers
@@ -63,6 +63,11 @@ Session codes: `fp1 fp2 fp3 sq sprint q race`. `summary.json` has a distinct sha
 - **Stats.** Season stats are race-only (`wins, podiums, poles, dnfs, points`), with separate `sprintWins, sprintPodiums, sprintPoles, sprintPoints`. Each driver also has `rounds`: per round they qualified or raced in, `teamId` (that round's entry), `qualiPosition`, `grid`, `racePosition` (null unless classified), `raceClassification`, `racePoints`, all from Jolpica.
 - **Names.** Round `shortName` is F1DB's grand prix name for the race within ±1 day ("Great Britain", "São Paulo"); fallback is the OpenF1 meeting name, else Jolpica's, without "Grand Prix". Round `winner` `{driverId, teamId}` is the Jolpica `positionText == "1"` row, null until completed. Team `shortName` comes from the curated `TEAM_SHORT_NAMES` map (see the exception under "Derive, don't hardcode").
 - **Standings** keep drivers no longer racing, with `active: false`.
+- **Title status** (latest round's entries only; null on earlier rounds), pure functions in `build/standings.py`:
+  - Max remaining = remaining races × race points + remaining sprints × sprint points. Remaining events are the Jolpica schedule rounds after this one (cancelled events aren't in it). Points are the season's observed maximum for P1 (drivers) or P1 + P2 (constructors), from Jolpica results; if a sprint remains but none has run yet, max remaining is unbounded.
+  - `champion`: the leader's margin over every rival is strictly greater than max remaining, or the final round is done (then the leader by Jolpica order, even on a points tie). Everyone else is `out`.
+  - Otherwise `contender` when points + max remaining ≥ the leader's points, else `out`. Every entrant counts as a rival, including inactive drivers.
+  - `clinchedAtRound` is on the champion's entry: the first round after which this test was decisive.
 - **Driver identity.** `drivers.json` takes code, nationality and date of birth from Jolpica, falling back to F1DB per field. Number, colour and headshot come from OpenF1 (latest race session); drivers without OpenF1 data keep Jolpica's race number and have null colour/headshot.
 - **Circuits.** Coordinates stay in the OpenF1 location frame as integers; `rotation` is passed through and applied in the app.
 - **Publish lag.** The first time a build writes a session's `summary.json` (provisional or not), it adds `{sessionEnd, firstPublishedAt}` to `meta/lag.json`. `sessionEnd` is the last OpenF1 `CHEQUERED` flag, else the scheduled `date_end`. `firstPublishedAt` is when the build wrote the file; the push and Pages deploy follow about 1–2 min later. Entries are never updated; sessions published before tracking started (summary already present) get no entry.
