@@ -83,10 +83,13 @@ def test_teams(season_data, latest):
     assert {t.id: t.name for t in out.teams}["red_bull"] == "Red Bull"  # full name unchanged (Jolpica)
 
 
-def test_every_season_team_has_a_curated_short_name(season_data):
-    # A new constructor id must be added to TEAM_SHORT_NAMES (otherwise it silently gets the full name).
-    team_ids = {row["Constructor"]["constructorId"] for r in season_data["results"] for row in r["Results"]}
-    assert team_ids <= set(TEAM_SHORT_NAMES)
+def test_every_season_team_has_a_curated_short_name(season_data, latest):
+    # Every team in this season's teams.json needs a TEAM_SHORT_NAMES entry, so a new team is noticed
+    # here instead of silently falling back to its full name.
+    drivers, idmap = latest
+    out = build_teams(2026, season_data["results"], drivers, idmap, NOW)
+    missing = sorted(t.id for t in out.teams if t.id not in TEAM_SHORT_NAMES)
+    assert missing == [], f"add {missing} to TEAM_SHORT_NAMES"
 
 
 def test_team_short_name_falls_back_to_full_name_for_unknown_ids():
