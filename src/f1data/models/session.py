@@ -8,6 +8,7 @@ from f1data.models.base import Model, SessionFile, Utc
 
 Classification = Literal["finished", "dnf", "dns", "dsq"]
 Segment = Literal["q1", "q2", "q3"]
+QualiStatus = Literal["classified", "dsq", "dns", "noTime"]
 
 
 class Range(Model):
@@ -36,6 +37,7 @@ class ClassifiedResult(Model):
     gap_ms: int | None
     laps_behind: int | None
     points: float
+    status_text: str | None  # source wording as published, e.g. "Retired", "Lapped"; may be generic
 
 
 class FastestLap(Model):
@@ -44,11 +46,24 @@ class FastestLap(Model):
     ms: int
 
 
+class Period(Model):
+    """A safety car, virtual safety car or red-flag period, from race-control messages."""
+
+    kind: Literal["sc", "vsc", "red"]
+    start_lap: int | None
+    end_lap: int | None
+    start_time: Utc
+    end_time: Utc
+    start_message: str
+    end_message: str  # e.g. "VSC ENDING", "SESSION STARTED", or "CHEQUERED FLAG" when open at the finish
+
+
 class RaceSummary(SessionFile):
     type: Literal["race"] = "race"
     results: list[ClassifiedResult]
     fastest_lap: FastestLap | None
     weather: Weather | None
+    periods: list[Period]
 
 
 class QualifyingEntry(Model):
@@ -57,6 +72,8 @@ class QualifyingEntry(Model):
     position: int | None
     best_ms: int | None
     eliminated_in: Literal["q1", "q2"] | None
+    status: QualiStatus
+    status_text: str | None  # source code behind status, e.g. "DSQ", "NC", "RT"; null when classified normally
 
 
 class QualifyingSummary(SessionFile):
@@ -158,7 +175,9 @@ class RaceControlMessage(Model):
     scope: str | None
     sector: int | None
     driver_id: str | None
+    driver_ids: list[str]  # every car the message names, in order
     message: str
+    kind: Literal["flag", "safetyCar", "penalty", "investigation", "noted", "noFurtherAction", "trackLimits", "other"]
     penalty: Penalty | None
 
 
@@ -177,6 +196,8 @@ class QualiDriver(Model):
     q2_ms: int | None
     q3_ms: int | None
     knockout: Segment | None  # last segment with a time
+    status: QualiStatus
+    status_text: str | None  # source code behind status, e.g. "DSQ", "NC", "RT"; null when classified normally
 
 
 class Quali(SessionFile):

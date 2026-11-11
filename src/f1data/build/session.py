@@ -6,7 +6,7 @@ import bisect
 import logging
 import re
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any
 
 from f1data.build.classify import classify
@@ -21,6 +21,7 @@ from f1data.models.session import (
     Overtake,
     Overtakes,
     Penalty,
+    Period,
     PitStop,
     PracticeEntry,
     PracticeSummary,
@@ -28,6 +29,7 @@ from f1data.models.session import (
     QualiDriver,
     QualifyingEntry,
     QualifyingSummary,
+    QualiStatus,
     RaceControl,
     RaceControlMessage,
     RaceSummary,
@@ -101,6 +103,7 @@ def build_race_summary(
     weather: Rows,
     idmap: IdMap,
     starting_grid: Rows | None = None,
+    race_control: Rows = (),
 ) -> RaceSummary:
     """Race or sprint classification from Jolpica; OpenF1 flags cross-check DNF/DNS/DSQ."""
     by_driver = {idmap.driver(r["driver_number"]): r for r in openf1_results}
@@ -132,16 +135,108 @@ def build_race_summary(
                 gap_ms=gap,
                 laps_behind=winner_laps - laps if lapped else None,
                 points=float(row.get("points", 0)),
+                status_text=row.get("status") or None,
             )
         )
         fl = row.get("FastestLap")
         if fl and fl.get("rank") == "1":
             fastest = FastestLap(driver_id=driver_id, lap=int(fl["lap"]), ms=clock_ms(fl["Time"]["time"]))
-    return RaceSummary(**meta.fields(), results=results, fastest_lap=fastest, weather=build_weather(weather))
+    return RaceSummary(
+        **meta.fields(),
+        results=results,
+        fastest_lap=fastest,
+        weather=build_weather(weather),
+        periods=build_periods(race_control, f"{meta.year}/{meta.round}/{meta.session}"),
+    )
+
+
+# ---------------------------------------------------------------- SC / VSC / red-flag periods
+
+SC_MESSAGES = {
+    "SAFETY CAR DEPLOYED": ("start", "sc"),
+    "SAFETY CAR IN THIS LAP": ("end", "sc"),
+    "VSC DEPLOYED": ("start", "vsc"),
+    "VSC ENDING": ("end", "vsc"),
+}
+SC_WORDING = re.compile(r"\bSAFETY CAR\b|\bVSC\b")
+# Mention the safety car or VSC without starting or ending a period (seen in 2026 race control).
+SC_NOT_A_PERIOD = re.compile(
+    r"SAFETY CAR LIGHTS (?:ON|OFF)|BEHIND SAFETY CAR|OVERTAKE THE SAFETY CAR|SAFETY CAR WILL USE|"
+    r"(?:SAFETY CAR|VSC) INFRINGEMENT|AT SAFETY CAR LINE"
+)
+
+
+def is_red_flag(r: dict[str, Any]) -> bool:
+    return r["message"].startswith("RED FLAG") or (r.get("category") == "Flag" and r.get("flag") == "RED")
+
+
+def build_periods(race_control: Rows, where: str = "") -> list[Period]:
+    """SC, VSC and red-flag periods from race control, in time order.
+
+    - SC: SAFETY CAR DEPLOYED .. SAFETY CAR IN THIS LAP; VSC: VSC DEPLOYED .. VSC ENDING. A deployment of the
+      other kind while one is open ends it there (VSC upgraded to SC, or SC to VSC).
+    - Red flag: a RED FLAG message .. the next SESSION STARTED (the restart). It ends any open SC/VSC.
+    - Anything still open at the chequered flag (or SESSION FINISHED) ends there.
+    Other SC/VSC wording that isn't a known non-period message is logged, not guessed at.
+    """
+    periods: list[Period] = []
+    open_: dict[str, dict[str, Any]] = {}  # "track" (sc/vsc) and "red" -> start fields
+    lap: int | None = None
+
+    def close(slot: str, t: datetime, end_lap: int | None, message: str) -> None:
+        p = open_.pop(slot, None)
+        if p:
+            periods.append(Period(**p, end_lap=end_lap, end_time=t, end_message=message))
+
+    for r in sorted(race_control, key=lambda r: r["date"]):
+        m, t = r["message"].strip(), parse_utc(r["date"])
+        lap = r.get("lap_number") or lap
+        if (r.get("flag") or "").upper() == "CHEQUERED" or (
+            r.get("category") == "SessionStatus" and m == "SESSION FINISHED"
+        ):
+            close("track", t, lap, m)
+            close("red", t, lap, m)
+            break
+        if is_red_flag(r):
+            close("track", t, lap, m)
+            open_.setdefault("red", {"kind": "red", "start_lap": lap, "start_time": t, "start_message": m})
+            continue
+        if r.get("category") == "SessionStatus" and m == "SESSION STARTED":
+            close("red", t, lap, m)
+            continue
+        if r.get("category") != "SafetyCar" and not SC_WORDING.search(m):
+            continue
+        action = SC_MESSAGES.get(m)
+        if action is None:
+            if not SC_NOT_A_PERIOD.search(m):
+                log.warning("periods: unrecognised SC/VSC message in %s: %r", where, m)
+            continue
+        what, kind = action
+        current = open_.get("track")
+        if what == "start":
+            if current and current["kind"] == kind:
+                continue  # repeated deployment message
+            close("track", t, lap, m)
+            open_["track"] = {"kind": kind, "start_lap": lap, "start_time": t, "start_message": m}
+        elif current and current["kind"] == kind:
+            close("track", t, lap, m)
+        else:
+            log.warning("periods: %r in %s with no open %s period", m, where, kind)
+    last = race_control and max(race_control, key=lambda r: r["date"])
+    if last and open_:  # no chequered flag in the data: end at the last message
+        t = parse_utc(last["date"])
+        close("track", t, lap, last["message"])
+        close("red", t, lap, last["message"])
+    return sorted(periods, key=lambda p: p.start_time)
 
 
 def build_qualifying_summary(
-    meta: SessionMeta, openf1_results: Rows, weather: Rows, idmap: IdMap, jolpica_rows: Rows | None = None
+    meta: SessionMeta,
+    openf1_results: Rows,
+    weather: Rows,
+    idmap: IdMap,
+    jolpica_rows: Rows | None = None,
+    f1db_codes: dict[int, str] | None = None,
 ) -> QualifyingSummary:
     reached = _segments_reached(openf1_results, jolpica_rows, idmap)
     last = _last_segment(reached)
@@ -156,6 +251,7 @@ def build_qualifying_summary(
                 position=_position(r),
                 best_ms=min((t for t in times if t is not None), default=None),
                 eliminated_in=knockout if knockout and knockout != last else None,
+                **_quali_status_fields(r, f1db_codes, meta),
             )
         )
     return QualifyingSummary(**meta.fields(), results=results, weather=build_weather(weather))
@@ -363,28 +459,75 @@ def parse_penalty(message: str, idmap: IdMap) -> Penalty | None:
     return None
 
 
+# "CAR 23 (ALB)", "CARS 4 (NOR) AND 81 (PIA)", "CARS 1 (A), 2 (B) AND 3 (C)", "CAR 5 - ..."
+NAMED_CARS = re.compile(r"\bCARS? (\d+(?: \([A-Z]{3}\))?(?:(?:, | AND )\d+(?: \([A-Z]{3}\))?)*)")
+LAP_DELETED_TRACK_LIMITS = re.compile(r"\b(?:TIME(?: \S+)?|LAP) DELETED - TRACK LIMITS\b")
+
+
+def named_drivers(r: dict[str, Any], idmap: IdMap) -> list[str]:
+    numbers = [int(n) for m in NAMED_CARS.finditer(r["message"]) for n in re.findall(r"\d+", m.group(1))]
+    if r.get("driver_number") is not None:
+        numbers.insert(0, r["driver_number"])
+    out: list[str] = []
+    for n in numbers:
+        driver = idmap.driver(n)
+        if driver and driver not in out:
+            out.append(driver)
+    return out
+
+
+def race_control_kind(r: dict[str, Any], penalty: Penalty | None) -> str:
+    """First match wins: stewards' outcome, then lap deletions, then safety car, then flags."""
+    m = r["message"]
+    if penalty or "PENALTY SERVED" in m or "REPRIMAND" in m:
+        return "penalty"
+    if "NO FURTHER ACTION" in m or "NO FURTHER INVESTIGATION" in m:
+        return "noFurtherAction"
+    if "UNDER INVESTIGATION" in m or "WILL BE INVESTIGATED" in m:
+        return "investigation"
+    if re.search(r"\bNOTED\b", m):
+        return "noted"
+    if LAP_DELETED_TRACK_LIMITS.search(m):
+        return "trackLimits"
+    if r.get("category") == "SafetyCar" or SC_WORDING.search(m):
+        return "safetyCar"
+    if r.get("category") == "Flag" or is_red_flag(r) or " FLAG" in m:
+        return "flag"
+    return "other"
+
+
 def build_race_control(meta: SessionMeta, rows: Rows, idmap: IdMap) -> RaceControl:
-    messages = [
-        RaceControlMessage(
-            utc=parse_utc(r["date"]),
-            lap=r.get("lap_number"),
-            category=_lower_first(r.get("category") or "other"),
-            flag=r["flag"].lower() if r.get("flag") else None,
-            scope=r["scope"].lower() if r.get("scope") else None,
-            sector=r.get("sector"),
-            driver_id=idmap.driver(r.get("driver_number")),
-            message=r["message"],
-            penalty=parse_penalty(r["message"], idmap),
+    messages = []
+    for r in sorted(rows, key=lambda r: parse_utc(r["date"])):
+        penalty = parse_penalty(r["message"], idmap)
+        messages.append(
+            RaceControlMessage(
+                utc=parse_utc(r["date"]),
+                lap=r.get("lap_number"),
+                category=_lower_first(r.get("category") or "other"),
+                flag=r["flag"].lower() if r.get("flag") else None,
+                scope=r["scope"].lower() if r.get("scope") else None,
+                sector=r.get("sector"),
+                driver_id=idmap.driver(r.get("driver_number")),
+                driver_ids=named_drivers(r, idmap),
+                message=r["message"],
+                kind=race_control_kind(r, penalty),
+                penalty=penalty,
+            )
         )
-        for r in sorted(rows, key=lambda r: parse_utc(r["date"]))
-    ]
     return RaceControl(**meta.fields(), messages=messages)
 
 
 # ---------------------------------------------------------------- quali.json
 
 
-def build_quali(meta: SessionMeta, openf1_results: Rows, idmap: IdMap, jolpica_rows: Rows | None = None) -> Quali:
+def build_quali(
+    meta: SessionMeta,
+    openf1_results: Rows,
+    idmap: IdMap,
+    jolpica_rows: Rows | None = None,
+    f1db_codes: dict[int, str] | None = None,
+) -> Quali:
     reached = _segments_reached(openf1_results, jolpica_rows, idmap)
     drivers = []
     for r in sorted(openf1_results, key=_position_key):
@@ -398,6 +541,7 @@ def build_quali(meta: SessionMeta, openf1_results: Rows, idmap: IdMap, jolpica_r
                 q2_ms=q2,
                 q3_ms=q3,
                 knockout=reached.get(idmap.drivers[r["driver_number"]]),
+                **_quali_status_fields(r, f1db_codes, meta),
             )
         )
     last = _last_segment(reached)
@@ -407,6 +551,45 @@ def build_quali(meta: SessionMeta, openf1_results: Rows, idmap: IdMap, jolpica_r
             eliminated[d.knockout] = eliminated.get(d.knockout, 0) + 1
     segments = SEGMENTS.index(last) + 1 if last else 0
     return Quali(**meta.fields(), segments=segments, eliminated=eliminated, drivers=drivers)
+
+
+F1DB_QUALI_CODES: dict[str, QualiStatus] = {"DSQ": "dsq", "EX": "dsq", "DNS": "dns", "NC": "noTime", "DNQ": "noTime"}
+
+
+def quali_status(r: dict[str, Any], f1db_code: str | None) -> tuple[QualiStatus, str | None]:
+    """(status, source code). F1DB's qualifying positionText when it has the session ("DSQ", "NC", "7"), else
+    OpenF1: its dsq/dns flags, then no segment time at all = noTime. The code is null for a normal classification."""
+    if f1db_code is not None:
+        if f1db_code.isdigit():
+            return "classified", None
+        if f1db_code in F1DB_QUALI_CODES:
+            return F1DB_QUALI_CODES[f1db_code], f1db_code
+        log.warning("quali: unknown F1DB positionText %r for car %s; using OpenF1", f1db_code, r["driver_number"])
+    code = r["position"] if isinstance(r.get("position"), str) else None
+    if r.get("dsq"):
+        return "dsq", code
+    if r.get("dns"):
+        return "dns", code
+    if all(t is None for t in _segment_times(r)):
+        return "noTime", code
+    return "classified", code
+
+
+def _quali_status_fields(r: dict[str, Any], f1db_codes: dict[int, str] | None, meta: SessionMeta) -> dict[str, Any]:
+    code = f1db_codes.get(r["driver_number"]) if f1db_codes else None
+    if f1db_codes and code is None:
+        log.warning("quali: car %s missing from F1DB %s/%s/%s", r["driver_number"], meta.year, meta.round, meta.session)
+    status, text = quali_status(r, code)
+    return {"status": status, "status_text": text}
+
+
+def f1db_quali_codes(f1db: dict[str, Any], race_day: date, sprint: bool) -> dict[int, str] | None:
+    """Car number -> F1DB qualifying positionText for the race within ±1 day, or None if F1DB lacks it yet."""
+    key = "sprintQualifyingResults" if sprint else "qualifyingResults"
+    for race in f1db.get("races", []):
+        if abs(date.fromisoformat(race["date"]) - race_day) <= timedelta(days=1) and race.get(key):
+            return {int(x["driverNumber"]): x["positionText"] for x in race[key] if x.get("driverNumber")}
+    return None
 
 
 def _segment_times(r: dict[str, Any]) -> tuple[int | None, int | None, int | None]:

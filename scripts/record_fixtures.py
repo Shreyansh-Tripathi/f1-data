@@ -25,6 +25,8 @@ YEAR = 2026
 MEETINGS = (1299, 1296)  # Brazil (latest race), Singapore (latest sprint weekend)
 LAST_ROUND = 20
 RED_FLAG_RACE = 11404  # Mexico 2026
+VSC_TO_SC_RACE = 11731  # Kuala Lumpur 2026 (round 16)
+QUALI_EDGE_CASES = (11271, 11276, 11400)  # round 4 sq and q, round 19 q (round 17 is recorded with Singapore)
 GZIP_OVER = 500_000
 
 
@@ -93,9 +95,16 @@ def main() -> None:
                 for fetch in (openf1.pit, openf1.intervals, openf1.position, openf1.overtakes):
                     fetch(client, sk)
 
-    # Mexico race: red-flag suspension and pre-race pit rows (strategy filtering).
-    for fetch in (openf1.pit, openf1.stints, openf1.race_control):
+    # Mexico race: red-flag suspension and pre-race pit rows (strategy filtering), plus VSC and SC periods.
+    for fetch in (openf1.pit, openf1.stints, openf1.race_control, openf1.drivers):
         fetch(client, RED_FLAG_RACE)
+    # Kuala Lumpur race: VSC upgraded to a safety car.
+    for fetch in (openf1.race_control, openf1.drivers):
+        fetch(client, VSC_TO_SC_RACE)
+    # Qualifying edge cases: DSQ (round 4 q, round 19 q), not classified (round 4 sq, round 17 q).
+    for sk in QUALI_EDGE_CASES:
+        for fetch in (openf1.session_result, openf1.drivers):
+            fetch(client, sk)
 
     # One short location window for the circuit-outline fallback (Brazil winner, 90 s).
     brazil = next(s for s in sessions if s["meeting_key"] == 1299 and s["session_name"] == "Race")
