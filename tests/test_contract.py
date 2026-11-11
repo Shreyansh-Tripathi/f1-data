@@ -67,7 +67,12 @@ def file(version, **fields):
         (file(1, timeMs="integer|null"), file(1, lapTimeMs="integer|null"), "timeMs removed or renamed"),
         (file(1, timeMs="integer|null"), file(2, lapTimeMs="integer|null"), None),  # renamed with a bump
         (file(1, a="integer"), file(1, a="integer|null"), "a changed integer -> integer|null"),  # now nullable
-        (file(1, k="enum(a,b)"), file(1, k="enum(a,b,c)"), "k changed enum(a,b) -> enum(a,b,c)"),  # new value
+        (file(1, k="enum(a,b)"), file(1, k="enum(a,b,c)"), None),  # new enum value: additive
+        (file(1, k="enum(a,b)|null"), file(1, k="enum(a,b,c)|null"), None),
+        (file(1, k="enum(a,b)"), file(1, k="enum(a)"), "k changed enum(a,b) -> enum(a)"),  # value removed
+        (file(1, k="enum(a,b)"), file(1, k="enum(a,c)"), "k changed enum(a,b) -> enum(a,c)"),  # renamed value
+        (file(1, k="enum(a,b)"), file(1, k="enum(a,b,c)|null"), "k changed"),  # gained a value but became nullable
+        (file(1, k="enum(a,b)"), file(1, k="string"), "k changed enum(a,b) -> string"),
         (file(2, a="integer"), file(1, a="integer"), "schemaVersion went down"),
         (file(1, a="integer"), {}, "file removed"),
     ],

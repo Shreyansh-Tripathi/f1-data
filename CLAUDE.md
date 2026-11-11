@@ -44,7 +44,8 @@ Session codes: `fp1 fp2 fp3 sq sprint q race`. `summary.json` has a distinct sha
 
 - Each published file has its own `schemaVersion` (the model's `schema_version`; default 1).
 - Within a schemaVersion, changes are **additive only**: new fields, new files.
-- Renaming or removing a field, changing its type or nullability, adding or removing an enum value, or changing a field's meaning bumps **that file's** `schemaVersion`. The app's DTOs parse enums strictly, so a new value counts as a change. A change in meaning (e.g. a different unit or source) can't be detected by the test, so bump it by hand.
+- **Enums:** adding a value is additive (no bump), so the app must tolerate unknown enum values. Removing or renaming a value, or changing what a value means, bumps the version.
+- Renaming or removing a field, changing its type or nullability, or changing a field's meaning bumps **that file's** `schemaVersion`. A change in meaning (of a field or an enum value, e.g. a different unit or source) can't be detected by the test, so bump it by hand.
 - `tests/contract/snapshot.json` is the committed contract: every file's schemaVersion and its fields flattened to `path -> type` (`f1data/models/contract.py`). `tests/test_contract.py` fails on a non-additive change without a bump, and on any difference from the snapshot. After a reviewed change run `uv run python scripts/update_contract_snapshot.py` and commit the snapshot.
 - New output models must be registered in `OUTPUT_FILES` (a test checks every `OutputFile` subclass is listed).
 - Versions so far: `race-control.json` is 2 (`deletion.timeMs` renamed to `lapTimeMs`); everything else is 1.

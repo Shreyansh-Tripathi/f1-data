@@ -1,7 +1,8 @@
 """The output contract as data: every published file's model and schemaVersion, flattened to `path -> type`.
 
 `tests/contract/snapshot.json` holds the committed contract; `scripts/update_contract_snapshot.py` rewrites it.
-Within a schemaVersion only additions are allowed (see "Contract change policy" in CLAUDE.md).
+Within a schemaVersion only additions are allowed, including new enum values (see "Contract change policy" in
+CLAUDE.md).
 """
 
 from __future__ import annotations
@@ -124,6 +125,24 @@ def breaking_changes(old: dict[str, Any], new: dict[str, Any]) -> list[str]:
         for field, t in before["fields"].items():
             if field not in after["fields"]:
                 problems.append(f"{path}: {field} removed or renamed (schemaVersion {before['schemaVersion']})")
-            elif after["fields"][field] != t:
+            elif not compatible(t, after["fields"][field]):
                 problems.append(f"{path}: {field} changed {t} -> {after['fields'][field]}")
     return problems
+
+
+def compatible(before: str, after: str) -> bool:
+    """Same type, except that an enum may gain values (additive); losing one is breaking."""
+    if before == after:
+        return True
+    old, new = before.split("|"), after.split("|")
+    old_enums = [t for t in old if t.startswith("enum(")]
+    new_enums = [t for t in new if t.startswith("enum(")]
+    if len(old_enums) != 1 or len(new_enums) != 1:
+        return False
+    if sorted(t for t in old if t not in old_enums) != sorted(t for t in new if t not in new_enums):
+        return False  # nullability or another member changed
+    return _enum_values(old_enums[0]) <= _enum_values(new_enums[0])
+
+
+def _enum_values(t: str) -> set[str]:
+    return set(t[len("enum(") : -1].split(","))
