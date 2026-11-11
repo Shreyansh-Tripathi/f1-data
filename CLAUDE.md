@@ -98,7 +98,7 @@ uv run f1data build --year 2026
 
 - `.github/workflows/ci.yml`: on push to `main` and on PRs, runs `uv sync --locked`, `ruff check`, `ruff format --check` and `pytest`. Tests are offline: they replay `tests/fixtures/http/` through `httpx.MockTransport`. No fixture may exceed 5 MB (enforced by `tests/test_fixture_sizes.py`).
 - `.github/workflows/build.yml`:
-  - **Schedule (UTC):** hourly (`0 * * * *`), calendar-aware. After checking out `gh-pages` and `uv sync`, `f1data should-build --year <current UTC year>` prints `true`/`false` (pure function `f1data/calendar.py:should_build`), and every later step runs only on `true`. It is `true` when:
+  - **Schedule (UTC):** hourly at minute 17 (`17 * * * *`; minute 0 is when GitHub delays or skips scheduled runs most), calendar-aware. After checking out `gh-pages` and `uv sync`, `f1data should-build --year <current UTC year>` prints `true`/`false` (pure function `f1data/calendar.py:should_build`), and every later step runs only on `true`. It is `true` when:
     - `site/v1/<year>/season.json` doesn't exist yet (new season not published);
     - now is inside a round's window: its first session start to 72 h after its last session end (a session with no end counts at its start; cancelled events are not rounds);
     - `manifest.json` `lastFullBuildAt` is missing or more than 24 h old.

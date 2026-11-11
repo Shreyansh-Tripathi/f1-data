@@ -3,7 +3,7 @@ name: build
 on:
   schedule:
     # Hourly; `f1data should-build` decides from the published calendar whether this run builds.
-    - cron: "0 * * * *"
+    - cron: "17 * * * *" # off the top of the hour, when GitHub delays or drops the most scheduled runs
   workflow_dispatch:
     inputs:
       year:
