@@ -205,6 +205,7 @@ class RaceControlMessage(Model):
     driver_ids: list[str]  # every car the message names, in order
     message: str  # raw, as published
     text: str  # sentence case for display: "Car 14 (ALO) time 1:32.490 deleted - track limits at turn 5 ..."
+    short_text: str  # `text` without car references to drivers in driverIds: "Time 1:32.490 deleted - track ..."
     kind: Literal[
         "flag",
         "safetyCar",

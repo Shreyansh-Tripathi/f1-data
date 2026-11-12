@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import bisect
 import logging
+import math
 import re
 from collections.abc import Collection
 from dataclasses import dataclass
@@ -122,6 +123,16 @@ def build_race_summary(
         driver_id = row["Driver"]["driverId"]
         c = classify(row["positionText"], by_driver.get(driver_id), who=f"{meta.session} {driver_id}")
         laps = int(row["laps"])
+        if c in ("finished", "dnf") and (c == "finished") != classified_distance(laps, winner_laps):
+            log.warning(
+                "classification vs 90%% rule for %s/%s %s: Jolpica %r, %d of %d laps",
+                meta.round,
+                meta.session,
+                driver_id,
+                row["positionText"],
+                laps,
+                winner_laps,
+            )
         time_ms = int(row["Time"]["millis"]) if row.get("Time", {}).get("millis") else None
         lapped = c == "finished" and laps < winner_laps
         gap = time_ms - winner_ms if c == "finished" and not lapped and time_ms and winner_ms else None
@@ -158,6 +169,11 @@ def build_race_summary(
 
 def _session_periods(meta: SessionMeta, race_control: Rows) -> list[Period]:
     return build_periods(race_control, f"{meta.year}/{meta.round}/{meta.session}", race=False)
+
+
+def classified_distance(laps: int, winner_laps: int) -> bool:
+    """FIA classification: at least 90% of the winner's laps, rounded down to a whole lap."""
+    return laps >= math.floor(0.9 * winner_laps)
 
 
 def build_session_drivers(openf1_drivers: Rows, idmap: IdMap) -> list[SessionDriver]:
@@ -577,7 +593,8 @@ def build_race_control(meta: SessionMeta, rows: Rows, idmap: IdMap) -> RaceContr
                 "driver_id": idmap.driver(r.get("driver_number")),
                 "driver_ids": named_drivers(r, idmap),
                 "message": r["message"],
-                "text": sentence_case(r["message"], _code_only_cars(r["message"])),
+                "text": sentence_case(r["message"], _code_only_cars(r["message"], idmap)),
+                "short_text": short_text(r["message"], idmap),
                 "kind": race_control_kind(r, penalty),
                 "penalty": penalty,
                 "deletion": _deletion(r["message"]),
@@ -587,8 +604,34 @@ def build_race_control(meta: SessionMeta, rows: Rows, idmap: IdMap) -> RaceContr
     return RaceControl(**meta.fields(), messages=[RaceControlMessage(**e) for e in entries])
 
 
-def _code_only_cars(message: str) -> set[str]:
-    return {m.group(1) for m in NAMED_CARS.finditer(message) if not m.group(1)[0].isdigit()}
+# A car reference with the word that introduces it: "FOR CAR 23 (ALB)", "INVOLVING CARS 4 (NOR) AND 81 (PIA)".
+CAR_REFERENCE = re.compile(r"(?:\b(?:FOR|INVOLVING)\s+)?" + NAMED_CARS.pattern)
+
+
+def short_text(message: str, idmap: IdMap) -> str:
+    """`text` without car references whose drivers all resolve (they are in driverIds, shown as chips):
+    "FIA STEWARDS: 5 SECOND TIME PENALTY FOR CAR 23 (ALB) - REJOINING UNSAFELY" ->
+    "FIA stewards: 5 second time penalty - rejoining unsafely". Unresolved references are kept."""
+
+    def drop(m: re.Match[str]) -> str:
+        group = m.group(1)
+        if group[0].isdigit():
+            resolved = all(idmap.driver(int(n)) for n in re.findall(r"\d+", group))
+        else:
+            resolved = group in idmap.codes
+        return " " if resolved else m.group(0)
+
+    out = CAR_REFERENCE.sub(drop, message)
+    out = re.sub(r"\s+", " ", out)
+    out = re.sub(r"\s+([-,:)])", lambda m: m.group(1) if m.group(1) != "-" else " -", out)
+    out = re.sub(r"(?:\s*-\s*)+$", "", out).strip()
+    out = re.sub(r"^-\s*", "", out)
+    return sentence_case(out, _code_only_cars(out, idmap))
+
+
+def _code_only_cars(message: str, idmap: IdMap) -> set[str]:
+    """Driver codes used alone ("CAR LAW"), only when they are this session's codes ("CARS MAY ..." is not)."""
+    return {m.group(1) for m in NAMED_CARS.finditer(message) if m.group(1) in idmap.codes}
 
 
 def _deletion(message: str) -> dict[str, Any] | None:

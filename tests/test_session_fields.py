@@ -1,6 +1,7 @@
 """Phase 4 session fields: SC/VSC/red periods, statusText, race-control kind/driverIds, qualifying status."""
 
 import logging
+import re
 from datetime import UTC, datetime
 
 import pytest
@@ -539,3 +540,108 @@ def test_qualifying_and_practice_summaries_carry_periods(season_data, shared_cli
     )
     assert isinstance(fp1.periods, list)
     assert "periods" in fp1.model_dump(mode="json", by_alias=True)
+
+
+# ---------------------------------------------------------------- classification vs the 90% rule
+
+
+def test_stroll_round_1_is_correctly_not_classified(season_data, shared_client, idmap_for):
+    # Jolpica: positionText "R", status "Lapped", 43 of 58 laps. 90% of 58 rounds down to 52, so he is not
+    # classified (F1DB: NC; OpenF1: "+15 LAPS"): no position, even though he was running at the end.
+    from f1data.build.session import classified_distance
+
+    jolpica = next(r for r in season_data["results"] if r["round"] == "1")["Results"]
+    row = next(r for r in jolpica if r["Driver"]["driverId"] == "stroll")
+    assert (row["positionText"], row["status"], row["laps"]) == ("R", "Lapped", "43")
+    assert not classified_distance(43, 58) and classified_distance(52, 58) and not classified_distance(51, 58)
+    s = build_race_summary(meta("race", 1), jolpica, [], [], ids.IdMap(drivers={}, teams={}))
+    stroll = next(r for r in s.results if r.driver_id == "stroll")
+    assert (stroll.position, stroll.classification, stroll.status_text, stroll.laps) == (None, "dnf", "Lapped", 43)
+
+
+def test_every_2026_classification_follows_the_90_percent_rule(season_data, caplog):
+    from f1data.build.session import classified_distance
+
+    for races, key in ((season_data["results"], "Results"), (season_data["sprint"], "SprintResults")):
+        for race in races:
+            rows = race[key]
+            winner = int(rows[0]["laps"])
+            for row in rows:
+                if row["positionText"] in ("W", "F", "D", "E"):
+                    continue
+                assert row["positionText"].isdigit() == classified_distance(int(row["laps"]), winner), (
+                    race["round"],
+                    row["Driver"]["driverId"],
+                )
+
+
+def test_classification_disagreeing_with_90_percent_rule_is_logged(caplog):
+    winner = {"Driver": {"driverId": "a"}, "Constructor": {"constructorId": "t"}, "number": "1", "position": "1",
+              "positionText": "1", "laps": "50", "points": "25", "status": "Finished"}  # fmt: skip
+    odd = {**winner, "Driver": {"driverId": "b"}, "number": "2", "position": "2", "positionText": "R", "laps": "48"}
+    with caplog.at_level(logging.WARNING, logger="f1data.build.session"):
+        build_race_summary(meta("race", 1), [winner, odd], [], [], ids.IdMap(drivers={}, teams={}))
+    assert "classification vs 90% rule for 1/race b: Jolpica 'R', 48 of 50 laps" in caplog.text
+
+
+# ---------------------------------------------------------------- shortText (driver chips)
+
+
+@pytest.mark.parametrize(
+    ("message", "short"),
+    [
+        (
+            "FIA STEWARDS: 5 SECOND TIME PENALTY FOR CAR 23 (ALB) - REJOINING UNSAFELY (14:50:05)",
+            "FIA stewards: 5 second time penalty - rejoining unsafely (14:50:05)",
+        ),
+        (
+            "INCIDENT INVOLVING CAR 27 (HUL) NOTED - LEAVING THE TRACK AND GAINING AN ADVANTAGE (15:09:09)",
+            "Incident noted - leaving the track and gaining an advantage (15:09:09)",
+        ),
+        (
+            "FIA STEWARDS: TURN 4 INCIDENT INVOLVING CARS 1 (NOR) AND 81 (PIA) UNDER INVESTIGATION - COLLISION",
+            "FIA stewards: turn 4 incident under investigation - collision",
+        ),
+        (
+            "CAR 14 (ALO) TIME 1:32.490 DELETED - TRACK LIMITS AT TURN 5 LAP 5 16:37:46",
+            "Time 1:32.490 deleted - track limits at turn 5 lap 5 16:37:46",
+        ),
+        ("WAVED BLUE FLAG FOR CAR 43 (COL) TIMED AT 16:11:36", "Waved blue flag timed at 16:11:36"),
+        ("FIRST CAR TO TAKE THE FLAG - CAR 1 (NOR)", "First car to take the flag"),
+        (
+            "FIA STEWARDS: WARNING FOR CAR 55 (SAI) - MOVING UNDER BRAKING",
+            "FIA stewards: warning - moving under braking",
+        ),
+        ("CAR LAW TIME DELETED - TRACK LIMITS AT TURN 14 (Q2)", "Time deleted - track limits at turn 14 (Q2)"),
+        ("CAR 55 (SAI) LAP 1 WILL BE REINSTATED", "Lap 1 will be reinstated"),
+        # Unresolved cars stay in the text (no chip to show them).
+        ("CAR 99 (ZZZ) LAP DELETED - TRACK LIMITS", "Car 99 (ZZZ) lap deleted - track limits"),
+        ("INCIDENT INVOLVING CARS 1 (NOR) AND 99 (ZZZ) NOTED", "Incident involving cars 1 (NOR) and 99 (ZZZ) noted"),
+        # Not car references.
+        ("LAPPED CARS MAY NOW OVERTAKE THE SAFETY CAR: 1, 16", "Lapped cars may now overtake the safety car: 1, 16"),
+        ("VSC DEPLOYED", "VSC deployed"),
+    ],
+)
+def test_short_text_drops_car_references_shown_as_chips(message, short):
+    numbers = {1: "norris", 14: "alonso", 16: "leclerc", 23: "albon", 27: "hulkenberg", 43: "colapinto",
+               55: "sainz", 81: "piastri"}  # fmt: skip
+    idmap = ids.IdMap(drivers=numbers, teams={}, codes={"LAW": "lawson"})
+    row = {"date": "2026-01-01T15:00:00+00:00", "message": message, "category": "Other", "flag": None}
+    m = build_race_control(meta("race", 1), [row], idmap).messages[0]
+    assert m.short_text == short
+    assert m.message == message  # raw unchanged
+
+
+def test_text_keeps_only_real_codes_upper_case():
+    row = {"date": "2026-01-01T15:00:00+00:00", "message": "LAPPED CARS MAY NOW OVERTAKE THE SAFETY CAR: 1, 16",
+           "category": "Other", "flag": None}  # fmt: skip
+    m = build_race_control(meta("race", 1), [row], ids.IdMap(drivers={}, teams={}, codes={"NOR": "norris"})).messages[0]
+    assert m.text == "Lapped cars may now overtake the safety car: 1, 16"
+
+
+def test_short_text_on_real_messages(mexico_rc):
+    out, _ = mexico_rc
+    for m in out.messages:
+        assert m.short_text
+        if m.driver_ids and "(" in m.message:
+            assert not re.search(r"\bcars? \d+ \([A-Z]{3}\)", m.short_text, re.IGNORECASE), m.short_text

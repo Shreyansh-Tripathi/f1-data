@@ -293,6 +293,7 @@
    "messages[].penalty.seconds": "integer|null",
    "messages[].scope": "null|string",
    "messages[].sector": "integer|null",
+   "messages[].shortText": "string",
    "messages[].text": "string",
    "messages[].utc": "string",
    "provisional": "boolean",
