@@ -49,11 +49,11 @@ def test_build_round_writes_contract(tmp_path):
     ]:
         assert rel in got, rel
     summary = json.loads((out / "2026/20/race/summary.json").read_text())
-    assert summary["type"] == "race" and summary["provisional"] is False
+    assert summary["type"] == "race" and summary["provisional"] is False and summary["final"] is True
     for session in ("race", "q", "fp1"):
         s = json.loads((out / f"2026/20/{session}/summary.json").read_text())
         assert {r["driverId"] for r in s["results"]} <= {d["id"] for d in s["drivers"]}
-    assert summary["schemaVersion"] == 1
+    assert summary["schemaVersion"] == 2
     manifest = json.loads((out / "manifest.json").read_text())
     assert set(manifest["files"]) == got - {"manifest.json"}
     assert manifest["lastFullBuildAt"] is None  # --round 20 is not a full build
@@ -75,13 +75,41 @@ def test_rerun_is_idempotent(tmp_path):
     assert files(out) == before
 
 
-def test_provisional_sessions_are_rebuilt(tmp_path):
+def test_sessions_inside_the_corrections_window_are_rebuilt(tmp_path):
     _, out = run(tmp_path, EARLY_NOW)
     summary = json.loads((out / "2026/20/race/summary.json").read_text())
-    assert summary["provisional"] is True
+    assert summary["final"] is False
+    assert summary["provisional"] is False  # Jolpica has round 20: not an OpenF1-only classification
     run(tmp_path, FINAL_NOW)
     summary = json.loads((out / "2026/20/race/summary.json").read_text())
-    assert summary["provisional"] is False
+    assert summary["final"] is True
+
+
+def test_race_is_provisional_while_jolpica_lacks_the_round(tmp_path):
+    # Jolpica responses without round 20: the race is classified from OpenF1 and tagged provisional.
+    from conftest import _respond
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        resp = _respond(request)
+        if request.url.host == "api.jolpi.ca" and "/2026/" in request.url.path and resp.status_code == 200:
+            body = json.loads(resp.content)
+            table = body["MRData"].get("RaceTable")
+            if table and "Races" in table:
+                table["Races"] = [r for r in table["Races"] if r.get("round") != "20"]
+                return httpx.Response(200, json=body)
+        return resp
+
+    out = tmp_path / "site"
+    client = HttpClient(tmp_path / "cache", transport=httpx.MockTransport(handler), sleep=lambda s: None)
+    main(["build", "--year", "2026", "--round", "20", "--out", str(out)], client=client, now=FINAL_NOW)
+    race = json.loads((out / "2026/20/race/summary.json").read_text())
+    assert race["provisional"] is True and race["final"] is False
+    assert race["results"][0]["position"] == 1 and race["results"][0]["statusText"] is None
+    for rel in ("race/laps.json", "race/race-control.json"):
+        assert json.loads((out / "2026/20" / rel).read_text())["provisional"] is True  # whole session tagged
+    for session in ("q", "fp1"):
+        s = json.loads((out / f"2026/20/{session}/summary.json").read_text())
+        assert s["provisional"] is False and s["final"] is False
 
 
 def lag(tmp_path):

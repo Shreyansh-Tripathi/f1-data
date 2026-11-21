@@ -223,7 +223,7 @@ class RaceControlMessage(Model):
 
 
 class RaceControl(SessionFile):
-    schema_version: int = 2  # 2: deletion.timeMs renamed to deletion.lapTimeMs
+    schema_version: int = 3  # 2: deletion.timeMs renamed to deletion.lapTimeMs; 3: provisional/final split
     messages: list[RaceControlMessage]
 
 

@@ -93,7 +93,7 @@ def test_the_lap_time_rename_needed_the_bump(snapshot):
     fields["messages[].deletion.timeMs"] = fields.pop("messages[].deletion.lapTimeMs")
     old[key]["schemaVersion"] = 1
     current = {key: contract()[key]}
-    assert current[key]["schemaVersion"] == 2
+    assert current[key]["schemaVersion"] >= 2
     assert breaking_changes(old, current) == []
     unbumped = copy.deepcopy(current)
     unbumped[key]["schemaVersion"] = 1

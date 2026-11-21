@@ -216,6 +216,7 @@
    "drivers{}.s2[]": "integer|null",
    "drivers{}.s3": "array",
    "drivers{}.s3[]": "integer|null",
+   "final": "boolean",
    "generatedAt": "string",
    "provisional": "boolean",
    "round": "integer",
@@ -223,10 +224,11 @@
    "session": "enum(fp1,fp2,fp3,q,race,sprint,sq)",
    "year": "integer"
   },
-  "schemaVersion": 1
+  "schemaVersion": 2
  },
  "{year}/{round}/{session}/overtakes.json": {
   "fields": {
+   "final": "boolean",
    "generatedAt": "string",
    "overtakes": "array",
    "overtakes[]": "object",
@@ -240,7 +242,7 @@
    "session": "enum(fp1,fp2,fp3,q,race,sprint,sq)",
    "year": "integer"
   },
-  "schemaVersion": 1
+  "schemaVersion": 2
  },
  "{year}/{round}/{session}/quali.json": {
   "fields": {
@@ -257,6 +259,7 @@
    "drivers[].teamId": "string",
    "eliminated": "map",
    "eliminated{}": "integer",
+   "final": "boolean",
    "generatedAt": "string",
    "provisional": "boolean",
    "round": "integer",
@@ -265,10 +268,11 @@
    "session": "enum(fp1,fp2,fp3,q,race,sprint,sq)",
    "year": "integer"
   },
-  "schemaVersion": 1
+  "schemaVersion": 2
  },
  "{year}/{round}/{session}/race-control.json": {
   "fields": {
+   "final": "boolean",
    "generatedAt": "string",
    "messages": "array",
    "messages[]": "object",
@@ -302,7 +306,7 @@
    "session": "enum(fp1,fp2,fp3,q,race,sprint,sq)",
    "year": "integer"
   },
-  "schemaVersion": 2
+  "schemaVersion": 3
  },
  "{year}/{round}/{session}/strategy.json": {
   "fields": {
@@ -321,6 +325,7 @@
    "drivers{}.stops[].lap": "integer",
    "drivers{}.stops[].stopMs": "integer|null",
    "drivers{}.stops[].utc": "string",
+   "final": "boolean",
    "generatedAt": "string",
    "provisional": "boolean",
    "round": "integer",
@@ -328,7 +333,7 @@
    "session": "enum(fp1,fp2,fp3,q,race,sprint,sq)",
    "year": "integer"
   },
-  "schemaVersion": 1
+  "schemaVersion": 2
  },
  "{year}/{round}/{session}/summary.json#practice": {
   "fields": {
@@ -341,6 +346,7 @@
    "drivers[].lastName": "null|string",
    "drivers[].number": "integer",
    "drivers[].teamId": "string",
+   "final": "boolean",
    "generatedAt": "string",
    "periods": "array",
    "periods[]": "object",
@@ -375,7 +381,7 @@
    "weather.trackTempC.min": "number",
    "year": "integer"
   },
-  "schemaVersion": 1
+  "schemaVersion": 2
  },
  "{year}/{round}/{session}/summary.json#qualifying": {
   "fields": {
@@ -388,6 +394,7 @@
    "drivers[].lastName": "null|string",
    "drivers[].number": "integer",
    "drivers[].teamId": "string",
+   "final": "boolean",
    "generatedAt": "string",
    "periods": "array",
    "periods[]": "object",
@@ -422,7 +429,7 @@
    "weather.trackTempC.min": "number",
    "year": "integer"
   },
-  "schemaVersion": 1
+  "schemaVersion": 2
  },
  "{year}/{round}/{session}/summary.json#race": {
   "fields": {
@@ -439,6 +446,7 @@
    "fastestLap.driverId": "string",
    "fastestLap.lap": "integer",
    "fastestLap.ms": "integer",
+   "final": "boolean",
    "generatedAt": "string",
    "periods": "array",
    "periods[]": "object",
@@ -479,6 +487,6 @@
    "weather.trackTempC.min": "number",
    "year": "integer"
   },
-  "schemaVersion": 1
+  "schemaVersion": 2
  }
 }

@@ -38,7 +38,9 @@ circuits/{circuitId}.json           # polyline, corners, rotation, length (OpenF
 
 Outside `v1/`, not in the manifest and not part of the app contract: `meta/lag.json` (`{sessions: {"{year}/{round}/{session}": {sessionEnd, firstPublishedAt}}}`) records publish lag.
 
-Session codes: `fp1 fp2 fp3 sq sprint q race`. `summary.json` has a distinct shape per session type (practice, qualifying, race/sprint), discriminated by `type`; every type lists the session's `drivers` (`{id, number, code, firstName, lastName, teamId, colour}` from that session's OpenF1 drivers, so practice-only drivers missing from `drivers.json` can be named). `overtakes.json` exists for race and sprint only. Session files carry `provisional`.
+Session codes: `fp1 fp2 fp3 sq sprint q race`. `summary.json` has a distinct shape per session type (practice, qualifying, race/sprint), discriminated by `type`; every type lists the session's `drivers` (`{id, number, code, firstName, lastName, teamId, colour}` from that session's OpenF1 drivers, so practice-only drivers missing from `drivers.json` can be named). `overtakes.json` exists for race and sprint only. Session files carry two separate flags:
+- `provisional`: the race/sprint is classified from OpenF1 only because Jolpica lacks the round yet (set on every file of that session; always false for practice and qualifying). Drives the app's "provisional" tag and all polling.
+- `final`: past the 72 h corrections window with Jolpica's round, so the session won't be rebuilt. Drives permanent caching only.
 
 ## Contract change policy
 
@@ -48,7 +50,9 @@ Session codes: `fp1 fp2 fp3 sq sprint q race`. `summary.json` has a distinct sha
 - Renaming or removing a field, changing its type or nullability, or changing a field's meaning bumps **that file's** `schemaVersion`. A change in meaning (of a field or an enum value, e.g. a different unit or source) can't be detected by the test, so bump it by hand.
 - `tests/contract/snapshot.json` is the committed contract: every file's schemaVersion and its fields flattened to `path -> type` (`f1data/models/contract.py`). `tests/test_contract.py` fails on a non-additive change without a bump, and on any difference from the snapshot. After a reviewed change run `uv run python scripts/update_contract_snapshot.py` and commit the snapshot.
 - New output models must be registered in `OUTPUT_FILES` (a test checks every `OutputFile` subclass is listed).
-- Versions so far: `race-control.json` is 2 (`deletion.timeMs` renamed to `lapTimeMs`); everything else is 1.
+- Versions so far:
+  - Session files (`summary.json`, `laps.json`, `strategy.json`, `quali.json`, `overtakes.json`) are 2, and `race-control.json` is 3. In version 1 (2 for race-control), `provisional` meant "inside the 72 h corrections window"; it now means "race/sprint classified from OpenF1 only", and the window became the new field `final`. `race-control.json` version 2 was the `deletion.timeMs` → `lapTimeMs` rename.
+  - Everything else is 1.
 
 ## Rules
 
@@ -57,15 +61,15 @@ Session codes: `fp1 fp2 fp3 sq sprint q race`. `summary.json` has a distinct sha
 - Every file has `schemaVersion` (per file, see Contract change policy) and `generatedAt`. Output models are `pydantic` v2; validate before writing.
 - Deterministic output: sorted keys, stable ordering, so unchanged data produces unchanged hashes. Keep the previous `generatedAt` when the rest of a file is unchanged.
 - `replay.json`: columnar per driver (`t`, `x`, `y`, `pos`), 1 Hz, integer coords. Budget < 2 MB per session.
-- Idempotent and resumable: skip sessions whose output exists and is not provisional, unless `--force`.
+- Idempotent and resumable: skip sessions whose `summary.json` exists with `final: true`, unless `--force`.
 - All HTTP through one client with retry, exponential backoff, per-host rate limiting, and an on-disk cache (`.cache/`, gitignored).
 
 ### Data rules
 
-- **Cache finality.** A session's data and its round's Jolpica data are cached permanently only once the session ended at least 72 h ago **and** Jolpica has the round. Before that: 1 h TTL, and outputs are written with `provisional: true`.
+- **Cache finality.** A session's data and its round's Jolpica data are cached permanently only once the session ended at least 72 h ago **and** Jolpica has the round. Before that: 1 h TTL (10 min while polling), and session files are written with `final: false` and rebuilt on every run. `final` has nothing to do with `provisional` (see Output contract).
 - **Matching.** Jolpica owns round numbers. Match each round to the OpenF1 meeting whose race date is within ±1 day; cancelled OpenF1 meetings are skipped.
 - **Classification.** DNF/DNS/DSQ come from Jolpica `positionText` (`R`/`N` = DNF, `W`/`F` = DNS, `D`/`E` = DSQ; `N` is "not classified", i.e. ran but did not finish), cross-checked with OpenF1 `dnf`/`dns`/`dsq`. Never parse `status` strings.
-  - Until Jolpica has the round, a race or sprint is published from OpenF1 `session_result` alone (`provisional: true`, as always before finality): a numeric `position` is classified, otherwise `dsq`, `dns`, else DNF; `positionText` uses Jolpica's codes (`R`, `W`, `D`); points are OpenF1's; `statusText` is null; grid comes from OpenF1 `starting_grid`; fastest lap is the fastest OpenF1 lap. Later runs rebuild it from Jolpica. Nothing is published while neither source has a classification.
+  - Until Jolpica has the round, a race or sprint is published from OpenF1 `session_result` alone with `provisional: true`: a numeric `position` is classified, otherwise `dsq`, `dns`, else DNF; `positionText` uses Jolpica's codes (`R`, `W`, `D`); points are OpenF1's; `statusText` is null; grid comes from OpenF1 `starting_grid`; fastest lap is the fastest OpenF1 lap. Later runs rebuild it from Jolpica. Nothing is published while neither source has a classification.
 - **90% rule.** A race/sprint finisher is classified when they completed at least 90% of the winner's laps, rounded down. Jolpica's `positionText` already follows it (checked for every 2026 row); the builder logs a WARNING if a numeric/`R` row ever disagrees.
 - **Grid and fastest lap** come from Jolpica results (`grid`, `FastestLap.rank == "1"`). OpenF1 `starting_grid` is only a fallback.
 - **Gaps.** `gapMs` is an integer on the lead lap. For lapped cars `gapMs` is null and `lapsBehind` is an integer (OpenF1 sends `"+1 LAP"` / `"+2 LAPS"`).
@@ -136,7 +140,7 @@ uv run f1data build --year 2026
     `lastFullBuildAt` is set by a build with no `--round`/`--session` filter and no failures, so a failing build is retried hourly. Every full build changes it, so builds inside a window publish every hour.
   - **Polling:** GitHub starts the hourly schedule only 3–4 times a day (see Findings), so a run started while polling is needed keeps going: build and publish, sleep, repeat. `f1data should-poll` (pure function `calendar.py:should_poll`) prints `true <interval_s>` or `false 0`:
     - every 15 min from a round's first session start to 6 h after its last session end;
-    - then every 30 min while the round's race or sprint `summary.json` is missing or provisional, capped at 48 h after the race (in practice until the cap, since summaries stay provisional until the 72 h finality);
+    - then every 30 min while the round's race or sprint `summary.json` is missing or provisional, capped at 48 h after the race (so polling stops once Jolpica has the round);
     - otherwise no polling; the rest of the 72 h tail is left to hourly runs.
 
     Each poll uses `--ttl-minutes 10` so provisional responses are re-fetched. A run polls for up to `poll_budget_minutes` (default 330, i.e. 5.5 h). When the budget runs out and `should-poll` is still true, it dispatches its successor (`gh workflow run build.yml -f poll=true` with `GITHUB_TOKEN`, hence `permissions: actions: write`); the concurrency group queues it. Scheduled runs are only a backup starter. The loop stops without a successor when `should-poll` turns false. A failed poll doesn't stop the loop but fails the job at the end. The loop is `.github/scripts/build-and-publish.sh`, tested with stubs in `tests/test_build_script.py`.

@@ -39,9 +39,9 @@ def read_json(path: Path) -> Any | None:
 
 
 def is_complete(session_dir: Path) -> bool:
-    """A session is done when its summary exists and is not provisional."""
+    """A session is done when its summary exists and is final (past the corrections window)."""
     summary = read_json(session_dir / "summary.json")
-    return isinstance(summary, dict) and summary.get("provisional") is False
+    return isinstance(summary, dict) and summary.get("final") is True
 
 
 def _without_generated(data: dict[str, Any]) -> dict[str, Any]:

@@ -260,7 +260,10 @@ class Build:
         elif code == "sprint":
             jolpica_rows = self.jolpica_rows(self.sprint, w.round, "SprintResults")
         final = self.final(w, code)
-        meta = SessionMeta(year=self.year, round=w.round, session=code, provisional=not final, generated_at=self.now)
+        provisional = code in ("race", "sprint") and not jolpica_rows
+        meta = SessionMeta(
+            year=self.year, round=w.round, session=code, provisional=provisional, final=final, generated_at=self.now
+        )
         c, sk = self.c, s["session_key"]
         drivers = openf1.drivers(c, sk, final=final)
         idmap = self.idmap(w, drivers)
@@ -296,7 +299,7 @@ class Build:
         self.write(f"{rel}/laps.json", build_laps(meta, laps, position, intervals, idmap))
         self.write(f"{rel}/strategy.json", build_strategy(meta, stints, pit, rc, idmap, ids.parse_utc(s["date_start"])))
         self.write(f"{rel}/race-control.json", build_race_control(meta, rc, idmap))
-        # summary last: its presence (non-provisional) marks the session complete.
+        # summary last: its presence (with final: true) marks the session complete.
         first_publish = not (self.out / rel / "summary.json").exists()
         self.write(f"{rel}/summary.json", summary)
         if first_publish and rel not in self.lag:
@@ -331,7 +334,7 @@ def should_poll_command(args: argparse.Namespace, now: datetime) -> int:
 
 
 def unsettled_rounds(out: Path, year: int, season: dict[str, Any] | None) -> set[int]:
-    """Rounds whose race or sprint summary is missing or still provisional."""
+    """Rounds whose race or sprint summary is missing or provisional (classified from OpenF1 only)."""
     unsettled = set()
     for rnd in (season or {}).get("rounds", []):
         for s in rnd.get("sessions", []):

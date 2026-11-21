@@ -42,9 +42,11 @@ def test_is_complete(tmp_path):
     d = tmp_path / "2026" / "20" / "race"
     d.mkdir(parents=True)
     assert not is_complete(d)
-    (d / "summary.json").write_text(json.dumps({"provisional": True}))
+    (d / "summary.json").write_text(json.dumps({"provisional": False, "final": False}))
     assert not is_complete(d)
-    (d / "summary.json").write_text(json.dumps({"provisional": False}))
+    (d / "summary.json").write_text(json.dumps({"provisional": False}))  # schemaVersion 1 file: rebuild
+    assert not is_complete(d)
+    (d / "summary.json").write_text(json.dumps({"provisional": False, "final": True}))
     assert is_complete(d)
 
 

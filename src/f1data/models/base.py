@@ -32,7 +32,11 @@ class OutputFile(Model):
 
 
 class SessionFile(OutputFile):
+    # 2 (3 for race-control.json): `provisional` changed meaning from "inside the 72 h corrections window" to
+    # "race/sprint classified from OpenF1 only"; the window is now `final`.
+    schema_version: int = 2
     year: int
     round: int
     session: SessionCode
-    provisional: bool
+    provisional: bool  # race/sprint session built from OpenF1 only because Jolpica lacks the round yet
+    final: bool  # past the 72 h corrections window with Jolpica's round: won't be rebuilt

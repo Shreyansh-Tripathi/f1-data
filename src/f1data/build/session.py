@@ -56,8 +56,9 @@ class SessionMeta:
     year: int
     round: int
     session: SessionCode
-    provisional: bool
+    provisional: bool  # race/sprint classified from OpenF1 only (Jolpica lacks the round)
     generated_at: datetime
+    final: bool = False  # past the 72 h corrections window (cache finality)
 
     def fields(self) -> dict[str, Any]:
         return {
@@ -65,6 +66,7 @@ class SessionMeta:
             "round": self.round,
             "session": self.session,
             "provisional": self.provisional,
+            "final": self.final,
             "generated_at": self.generated_at,
         }
 

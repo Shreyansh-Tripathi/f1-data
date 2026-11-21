@@ -12,7 +12,7 @@ TAIL = timedelta(hours=72)  # matches cache finality: data can still change unti
 FALLBACK = timedelta(hours=24)
 POLL_TAIL = timedelta(hours=6)  # sources publish within an hour or two of a session; Jolpica can take longer
 POLL_INTERVAL_S = 15 * 60
-SETTLE_CAP = timedelta(hours=48)  # after the race: keep polling a provisional race/sprint until then
+SETTLE_CAP = timedelta(hours=48)  # after the race: keep polling a race/sprint until Jolpica has it, at most this long
 SETTLE_INTERVAL_S = 30 * 60
 
 
@@ -55,7 +55,8 @@ def should_poll(now: datetime, season: dict[str, Any] | None, unsettled: Collect
 
     Every 15 min from a round's first session start to 6 h after its last session end, when new sessions can
     appear at any time. After that, every 30 min while the round is in `unsettled` (its race or sprint summary is
-    missing or provisional), capped at 48 h after the race. The rest of the 72 h tail is left to hourly runs.
+    missing or provisional, i.e. classified from OpenF1 only), capped at 48 h after the race. The rest of the 72 h
+    tail is left to hourly runs.
     The end of a polling run uses the same decision to dispatch its successor.
     """
     for rnd in (season or {}).get("rounds", []):

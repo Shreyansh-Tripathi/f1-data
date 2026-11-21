@@ -36,7 +36,14 @@ def test_lap_columns_must_align():
 
 
 def test_summary_discriminates_on_type():
-    base = {"generatedAt": "2026-11-10T00:00:00Z", "year": 2026, "round": 20, "provisional": False, "weather": None}
+    base = {
+        "generatedAt": "2026-11-10T00:00:00Z",
+        "year": 2026,
+        "round": 20,
+        "provisional": False,
+        "final": False,
+        "weather": None,
+    }
     practice = {**base, "type": "practice", "session": "fp1", "results": [], "drivers": [], "periods": []}
     assert type(TypeAdapter(Summary).validate_python(practice)).__name__ == "PracticeSummary"
     with pytest.raises(ValidationError):
