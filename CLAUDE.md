@@ -26,7 +26,7 @@ Never send auth tokens. **Only exception:** the workflow's built-in `GITHUB_TOKE
 
 ```
 manifest.json                       # {files: {path: {hash, updatedAt}}, lastFullBuildAt, schemaVersion, generatedAt}
-{year}/season.json                  # rounds (name, shortName, winner), sessions (type, utc start), circuit ids, status
+{year}/season.json                  # rounds (name, shortName, winner, provisional), sessions (type, utc start), circuit ids, status
 {year}/standings/drivers.json       # WDC after each round; entries carry `active`, `titleStatus`, `clinchedAtRound`
 {year}/standings/teams.json         # WCC after each round; entries carry `titleStatus`, `clinchedAtRound`
 {year}/drivers.json                 # number, code, name, nationality, team, colour, headshot
@@ -52,7 +52,7 @@ Session codes: `fp1 fp2 fp3 sq sprint q race`. `summary.json` has a distinct sha
 - New output models must be registered in `OUTPUT_FILES` (a test checks every `OutputFile` subclass is listed).
 - Versions so far:
   - Session files (`summary.json`, `laps.json`, `strategy.json`, `quali.json`, `overtakes.json`) are 2, and `race-control.json` is 3. In version 1 (2 for race-control), `provisional` meant "inside the 72 h corrections window"; it now means "race/sprint classified from OpenF1 only", and the window became the new field `final`. `race-control.json` version 2 was the `deletion.timeMs` → `lapTimeMs` rename.
-  - Everything else is 1.
+  - Everything else is 1. `season.json` round `provisional` (provisional race winner) was additive, no bump.
 
 ## Rules
 
@@ -89,7 +89,7 @@ Session codes: `fp1 fp2 fp3 sq sprint q race`. `summary.json` has a distinct sha
 - **Qualifying status** (`quali.json` and q/sq `summary.json`): `status: classified|dsq|dns|noTime` with raw `statusText`. Source: F1DB `qualifyingResults` / `sprintQualifyingResults` `positionText` for the race within ±1 day (digits = classified, `DSQ`/`EX` = dsq, `DNS` = dns, `NC`/`DNQ` = noTime). Before F1DB has the weekend: OpenF1 `dsq`, `dns`, then no segment time = noTime; `statusText` is then OpenF1's non-numeric position (e.g. `RT`).
 - **Penalties.** Race-control entries keep the raw `message` and add `penalty: {driver, kind, seconds, reason} | null`, with `kind` one of `time | driveThrough | stopGo | grid`. `seconds` holds seconds for time and stop-go penalties, places for grid penalties, null otherwise. `reason` is the stewards' text after `FOR CAR n (XXX) - `, in sentence case (acronyms `DRS VSC SC DSQ DNF FIA` and driver codes like `(NOR)` stay upper case), without the trailing clock time; null when the message has none. "PENALTY SERVED" and investigation messages have no penalty.
 - **Stats.** Season stats are race-only (`wins, podiums, poles, dnfs, points`), with separate `sprintWins, sprintPodiums, sprintPoles, sprintPoints`. Each driver also has `rounds`: per round they qualified or raced in, `teamId` (that round's entry), `qualiPosition`, `grid`, `racePosition` (null unless classified), `raceClassification`, `racePoints`, all from Jolpica.
-- **Names.** Round `shortName` is F1DB's grand prix name for the race within ±1 day ("Great Britain", "São Paulo"); fallback is the OpenF1 meeting name, else Jolpica's, without "Grand Prix". Round `winner` `{driverId, teamId}` is the Jolpica `positionText == "1"` row, null until completed. Team `shortName` comes from the curated `TEAM_SHORT_NAMES` map (see the exception under "Derive, don't hardcode").
+- **Names.** Round `shortName` is F1DB's grand prix name for the race within ±1 day ("Great Britain", "São Paulo"); fallback is the OpenF1 meeting name, else Jolpica's, without "Grand Prix". Round `winner` `{driverId, teamId}` is the Jolpica `positionText == "1"` row once the round is `completed`. Before that, while the race `summary.json` is provisional, it is that summary's P1 and the round has `provisional: true` (status stays `upcoming`; `provisional` is false on every other round); otherwise null. The season file is built again after the session files, so a race published from OpenF1 reaches the calendar in the same run. Team `shortName` comes from the curated `TEAM_SHORT_NAMES` map (see the exception under "Derive, don't hardcode").
 - **Standings** keep drivers no longer racing, with `active: false`.
 - **Title status** (latest round's entries only; null on earlier rounds), pure functions in `build/standings.py`:
   - Max remaining = remaining races × race points + remaining sprints × sprint points. Remaining events are the Jolpica schedule rounds after this one (cancelled events aren't in it). Points are the season's observed maximum for P1 (drivers) or P1 + P2 (constructors), from Jolpica results; if a sprint remains but none has run yet, max remaining is unbounded.
