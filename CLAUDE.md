@@ -6,7 +6,7 @@ Python pipeline that turns free F1 data sources into versioned static JSON, publ
 
 - Completed sessions only. No live timing.
 - This repo is **public** (free Actions minutes + free Pages).
-- Runs on GitHub Actions cron (hourly, calendar-aware: see CI and publishing); output served from GitHub Pages under `/v1/`.
+- Runs on GitHub Actions cron (hourly, calendar-aware, polling every 15 min while a round is in progress: see CI and publishing); output served from GitHub Pages under `/v1/`.
 - Actions runs start cold: restore prior output by checking out `gh-pages` into `site/`, and restore `.cache/` with `actions/cache`.
 - The app only reads our JSON. Never expose source-specific field names in output.
 - No FastF1: it needs a paid F1 TV subscription (see Findings).
@@ -18,9 +18,9 @@ Python pipeline that turns free F1 data sources into versioned static JSON, publ
 | OpenF1 `https://api.openf1.org/v1/` | All session data: sessions, meetings, drivers, session_result, starting_grid, laps, stints, pit, intervals, position, race_control, weather, overtakes, team_radio, location | Historical (2023+) free, no auth. Observed limit ~30 req / min per IP (429 with `Retry-After: 60` above it); client spaces requests 2 s apart. championship_* endpoints are beta. Skip meetings with `is_cancelled`. Query `starting_grid` by `meeting_key` (it is keyed to the qualifying session). Fetch location per driver. Empty result = HTTP 404 `{"detail":"No results found."}`, mapped to `[]` and logged. While a session is live it answers every unauthenticated request, past sessions included, with 401 `Live F1 session in progress…`. car_data is not used. |
 | Jolpica `https://api.jolpi.ca/ergast/f1/` | Round numbers (owner), standings (source of record), results, qualifying, sprint, schedule, grid, fastest lap | ~4 req/s, ~200 req/hour. Cache aggressively. Use season-wide paginated `results` / `qualifying` / `sprint` (`limit` + `offset`). Rounds skip cancelled events. |
 | MultiViewer `circuit_info_url` from OpenF1 `meetings` | Circuit outline, corners, rotation | Free, no auth. Only follow URLs under `https://api.multiviewer.app/`. Fetch once per circuit per season, cache permanently. Fallback: outline from OpenF1 `location` (no corners). |
-| F1DB (GitHub releases of `f1db/f1db`) | Career totals (titles, wins, podiums, starts, poles, fastest laps); qualifying status (`positionText`); retirement reasons (`reasonRetired`); round short names (`grandsPrix.name` via `races.grandPrixId`); fallback for driver code, nationality (country id → demonym via `countries`) and date of birth when Jolpica lacks them | Download release asset once per run. Use `f1db-json-single.zip` (6.8 MB, 85 MB unzipped). Find the tag from the `github.com/f1db/f1db/releases/latest` redirect, never the GitHub API (60 req/h per IP, exhausted on shared runners); if that fails, use the last known tag from `.cache/`. Filter season entrants to drivers with race starts. |
+| F1DB (GitHub releases of `f1db/f1db`) | Career totals (titles, wins, podiums, starts, poles, fastest laps); qualifying status (`positionText`); retirement reasons (`reasonRetired`); round short names (`grandsPrix.name` via `races.grandPrixId`); fallback for driver code, nationality (country id → demonym via `countries`) and date of birth when Jolpica lacks them | Download release asset once per run. Use `f1db-json-single.zip` (6.8 MB, 85 MB unzipped). Find the latest tag via the GitHub API with Actions' `GITHUB_TOKEN` (unauthenticated: 60 req/h per IP, exhausted on shared runners); without a token or if that fails, the `github.com/f1db/f1db/releases/latest` redirect; then the most recently cached tag in `.cache/`. An F1DB failure never blocks session files: they are built without it (F1DB-derived fields fall back or stay null) and filled in on a later run. Filter season entrants to drivers with race starts. |
 
-Never send auth tokens. Never re-host team radio audio; store only F1's URL.
+Never send auth tokens. **Only exception:** the workflow's built-in `GITHUB_TOKEN` (free, no secret to manage), sent only to `api.github.com` for the F1DB release lookup and only inside Actions; `HttpClient` refuses to send a token to any other host. Never re-host team radio audio; store only F1's URL.
 
 ## Output contract (`site/v1/`)
 
@@ -65,6 +65,7 @@ Session codes: `fp1 fp2 fp3 sq sprint q race`. `summary.json` has a distinct sha
 - **Cache finality.** A session's data and its round's Jolpica data are cached permanently only once the session ended at least 72 h ago **and** Jolpica has the round. Before that: 1 h TTL, and outputs are written with `provisional: true`.
 - **Matching.** Jolpica owns round numbers. Match each round to the OpenF1 meeting whose race date is within ±1 day; cancelled OpenF1 meetings are skipped.
 - **Classification.** DNF/DNS/DSQ come from Jolpica `positionText` (`R`/`N` = DNF, `W`/`F` = DNS, `D`/`E` = DSQ; `N` is "not classified", i.e. ran but did not finish), cross-checked with OpenF1 `dnf`/`dns`/`dsq`. Never parse `status` strings.
+  - Until Jolpica has the round, a race or sprint is published from OpenF1 `session_result` alone (`provisional: true`, as always before finality): a numeric `position` is classified, otherwise `dsq`, `dns`, else DNF; `positionText` uses Jolpica's codes (`R`, `W`, `D`); points are OpenF1's; `statusText` is null; grid comes from OpenF1 `starting_grid`; fastest lap is the fastest OpenF1 lap. Later runs rebuild it from Jolpica. Nothing is published while neither source has a classification.
 - **90% rule.** A race/sprint finisher is classified when they completed at least 90% of the winner's laps, rounded down. Jolpica's `positionText` already follows it (checked for every 2026 row); the builder logs a WARNING if a numeric/`R` row ever disagrees.
 - **Grid and fastest lap** come from Jolpica results (`grid`, `FastestLap.rank == "1"`). OpenF1 `starting_grid` is only a fallback.
 - **Gaps.** `gapMs` is an integer on the lead lap. For lapped cars `gapMs` is null and `lapsBehind` is an integer (OpenF1 sends `"+1 LAP"` / `"+2 LAPS"`).
@@ -95,7 +96,7 @@ Session codes: `fp1 fp2 fp3 sq sprint q race`. `summary.json` has a distinct sha
 - **Circuits.** Coordinates stay in the OpenF1 location frame as integers; `rotation` is passed through and applied in the app.
 - **Publish lag.** The first time a build writes a session's `summary.json` (provisional or not), it adds `{sessionEnd, firstPublishedAt}` to `meta/lag.json`. `sessionEnd` is the last OpenF1 `CHEQUERED` flag, else the scheduled `date_end`. `firstPublishedAt` is when the build wrote the file; the push and Pages deploy follow about 1–2 min later. Entries are never updated; sessions published before tracking started (summary already present) get no entry.
 - **404s.** Every OpenF1 404 mapped to `[]` is logged at WARNING with its URL.
-- **OpenF1 live lockout.** A 401 `Live F1 session in progress` stops the build at that point without counting as a failure: files already written are kept and published, the run exits 0, and it doesn't count as a full build (`lastFullBuildAt` unchanged), so the next run retries.
+- **OpenF1 live lockout.** A 401 `Live F1 session in progress` stops the build at that point without counting as a failure: files already written are kept and published, `f1data build` exits 75, and it doesn't count as a full build (`lastFullBuildAt` unchanged). Inside the polling loop that poll is logged and skipped and the loop retries at the next interval; a single run ends as "skipped, live session" (job succeeds) and the next run retries.
 
 ## Stack and layout
 
@@ -133,15 +134,15 @@ uv run f1data build --year 2026
     - `manifest.json` `lastFullBuildAt` is missing or more than 24 h old.
 
     `lastFullBuildAt` is set by a build with no `--round`/`--session` filter and no failures, so a failing build is retried hourly. Every full build changes it, so builds inside a window publish every hour.
+  - **Polling:** GitHub starts the hourly schedule only 3–4 times a day (see Findings), so while a round is in progress (`f1data should-poll`, pure function `calendar.py:should_poll`: first session start to 6 h after the last session end) a scheduled run keeps going: build and publish, sleep 15 min, repeat, for up to 5.5 h. Each poll uses `--ttl-minutes 10` so provisional responses are re-fetched every poll. The loop stops when no round is in progress or the budget is used; the queued scheduled run takes over. A failed poll doesn't stop the loop but fails the job at the end. The loop is `.github/scripts/build-and-publish.sh`.
     `workflow_dispatch` always builds. If `should-build` errors or prints anything else, the run fails rather than skipping.
-  - **Manual runs:** `workflow_dispatch` with inputs `year`, `round`, `session`, `force`.
-  - **Settings:** `permissions: contents: write`; concurrency group `build-data` without cancel-in-progress (runs queue); 60 min timeout.
+  - **Manual runs:** `workflow_dispatch` with inputs `year`, `round`, `session`, `force`, `poll` (default false; ignored with `round` or `session`; polls only while a round is in progress).
+  - **Settings:** `permissions: contents: write`; concurrency group `build-data` without cancel-in-progress (runs queue); 350 min timeout (GitHub's job limit is 6 h).
   - **Steps:**
     1. Check out `gh-pages` into `site/`.
-    2. `uv sync --locked`, then decide (`should-build`, or `true` for manual runs).
+    2. `uv sync --locked`, then decide whether to build (`should-build`, or `true` for manual runs) and whether to poll (`should-poll`).
     3. Restore `.cache/` with `actions/cache`.
-    4. `f1data build`. If it fails, the steps continue and the job fails at the end.
-    5. Publish, but only if `site/v1/manifest.json` changed: write `site/.nojekyll`, build an orphan commit from `site/` with a temporary index, and force-push it to `gh-pages`. The branch always holds one squashed commit.
+    4. `build-and-publish.sh`: `f1data build` (with `GITHUB_TOKEN` in the environment), then publish, but only if `site/v1/manifest.json` changed: write `site/.nojekyll`, build an orphan commit from `site/` with a temporary index, and force-push it to `gh-pages`. The branch always holds one squashed commit. Repeated while polling; a failed build still publishes what was written and fails the job at the end.
   - All actions are pinned to commit SHAs, with the exact version in a comment.
 - `.github/dependabot.yml`: weekly updates for GitHub Actions and Python. Python uses the `uv` ecosystem so `uv.lock` is updated together with `pyproject.toml`.
 - Pages must be configured to serve the `gh-pages` branch root. The data URL is `https://shreyansh-tripathi.github.io/f1-data/v1/`.
@@ -238,4 +239,5 @@ Findings:
 
 - OpenF1 locks out unauthenticated clients while a session is live, including past sessions: run 44668258214 (2026-11-20 03:31Z) got 401 `Live F1 session in progress. Global API access (including past sessions) is restricted to authenticated users until the session ends.` on `meetings?year=2026`. That was 29 min before FP2 started (04:00Z), so the lockout starts before the session, not only during it. A key is paid (Stripe link), so the build now treats the 401 as a skip.
 - `api.github.com/repos/f1db/f1db/releases/latest` returned 403 `API rate limit exceeded for 3.42.157.122` (run 44856340066, 2026-11-21 02:31Z): the unauthenticated limit is 60 req/h per IP and Actions runners share IPs. Season, drivers/teams and driver-stats failed. The tag now comes from the `github.com` redirect (302 to `/releases/tag/<tag>`), with the last known tag as fallback.
-- GitHub ran the hourly `17 * * * *` schedule only 3–4 times a day from 2026-11-12 to 2026-11-21 (start times drifting by 4–31 min, gaps up to 10 h), so publish lag on race weekends was up to 11.5 h (FP1). Not fixed yet.
+- GitHub ran the hourly `17 * * * *` schedule only 3–4 times a day from 2026-11-12 to 2026-11-21 (start times drifting by 4–31 min, gaps up to 10 h), so publish lag on race weekends was up to 11.5 h (FP1). Scheduled runs now keep polling every 15 min while a round is in progress.
+- Race and sprint publishing waited on Jolpica ("Jolpica has no classification yet"); they now publish from OpenF1 first. Jolpica had no 2026 round 21 qualifying at 05:57Z, 55 min after the session, while OpenF1 had it.
