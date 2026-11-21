@@ -34,6 +34,7 @@ from f1data.http import HttpClient, HttpError, OpenF1Locked
 from f1data.io import is_complete, read_json, write_model
 from f1data.manifest import write_manifest
 from f1data.models.meta import PublishLag, SessionLag
+from f1data.models.season import RoundWinner
 from f1data.sources import f1db, jolpica, multiviewer, openf1
 
 log = logging.getLogger("f1data")
@@ -123,6 +124,8 @@ class Build:
             for code in SESSION_CODES:
                 if session_filter in (None, code) and code in w.sessions:
                     self.guarded(f"round {w.round} {code}", lambda w=w, code=code: self.build_session(w, code))
+        # Again, so a race summary published from OpenF1 in this run puts its winner on the calendar now.
+        self.guarded("season", self.build_season)
 
     # ------------------------------------------------------------------ season-level
 
@@ -130,8 +133,31 @@ class Build:
         cancelled = ids.cancelled_meetings(self.meetings)
         self.write(
             f"{self.year}/season.json",
-            build_season(self.year, self.weekends, cancelled, self.completed, self.results, self.f1db(), self.now),
+            build_season(
+                self.year,
+                self.weekends,
+                cancelled,
+                self.completed,
+                self.results,
+                self.f1db(),
+                self.now,
+                self.provisional_winners(),
+            ),
         )
+
+    def provisional_winners(self) -> dict[int, RoundWinner]:
+        """P1 of each race summary published from OpenF1 only, for rounds Jolpica doesn't have yet."""
+        out = {}
+        for w in self.weekends:
+            if w.round in self.completed:
+                continue
+            summary = read_json(self.out / str(self.year) / str(w.round) / "race" / "summary.json")
+            if not isinstance(summary, dict) or summary.get("provisional") is not True:
+                continue
+            p1 = next((r for r in summary.get("results", []) if r.get("position") == 1), None)
+            if p1:
+                out[w.round] = RoundWinner(driver_id=p1["driverId"], team_id=p1["teamId"])
+        return out
 
     def build_circuit(self, w: ids.Weekend) -> None:
         rel = f"circuits/{w.circuit_id}.json"

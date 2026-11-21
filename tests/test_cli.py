@@ -110,6 +110,11 @@ def test_race_is_provisional_while_jolpica_lacks_the_round(tmp_path):
     for session in ("q", "fp1"):
         s = json.loads((out / f"2026/20/{session}/summary.json").read_text())
         assert s["provisional"] is False and s["final"] is False
+    # The calendar carries the provisional winner from the same run.
+    rnd = json.loads((out / "2026/season.json").read_text())["rounds"][19]
+    assert rnd["round"] == 20 and rnd["status"] == "upcoming" and rnd["provisional"] is True
+    p1 = race["results"][0]
+    assert rnd["winner"] == {"driverId": p1["driverId"], "teamId": p1["teamId"]}
 
 
 def lag(tmp_path):

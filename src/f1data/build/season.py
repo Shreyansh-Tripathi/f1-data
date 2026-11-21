@@ -18,8 +18,12 @@ def build_season(
     results: list[dict[str, Any]],
     f1db: dict[str, Any],
     generated_at: datetime,
+    provisional_winners: dict[int, RoundWinner] | None = None,
 ) -> Season:
+    """`provisional_winners` are the P1s of races published from OpenF1 only; they stand in for a round until
+    Jolpica has it."""
     winners = _winners(results)
+    provisional_winners = provisional_winners or {}
     gp_names = _f1db_gp_names(year, f1db)
     rounds = []
     for w in weekends:
@@ -32,6 +36,8 @@ def build_season(
                 )
             elif code in w.scheduled:
                 sessions.append(SeasonSession(code=code, start=w.scheduled[code], end=None))
+        completed = w.round in completed_rounds
+        provisional = not completed and w.round in provisional_winners
         rounds.append(
             Round(
                 round=w.round,
@@ -41,10 +47,11 @@ def build_season(
                 country=w.country,
                 locality=w.locality,
                 start=w.race_start,
-                status="completed" if w.round in completed_rounds else "upcoming",
+                status="completed" if completed else "upcoming",
                 sprint=any(s.code == "sprint" for s in sessions),
                 sessions=sessions,
-                winner=winners.get(w.round) if w.round in completed_rounds else None,
+                winner=winners.get(w.round) if completed else provisional_winners.get(w.round),
+                provisional=provisional,
             )
         )
     return Season(

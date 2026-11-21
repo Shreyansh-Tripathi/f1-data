@@ -4,6 +4,7 @@ import pytest
 
 from f1data.build import ids
 from f1data.build.season import build_season
+from f1data.models.season import RoundWinner
 from f1data.sources import f1db
 
 NOW = datetime(2026, 11, 10, 12, tzinfo=UTC)
@@ -65,6 +66,22 @@ def test_short_names_and_winners(season_data, db):
     assert all(r.winner is None for r in season.rounds if r.status == "upcoming")
     out = season.model_dump(mode="json", by_alias=True)["rounds"][19]
     assert out["shortName"] == "São Paulo" and set(out["winner"]) == {"driverId", "teamId"}
+
+
+def test_provisional_winner_stands_in_until_jolpica_has_the_round(season_data):
+    completed = {int(r["round"]) for r in season_data["results"]}
+    provisional = {
+        20: RoundWinner(driver_id="piastri", team_id="mclaren"),  # Jolpica has round 20: ignored
+        21: RoundWinner(driver_id="norris", team_id="mclaren"),
+    }
+    season = build_season(2026, season_data["weekends"], [], completed, season_data["results"], {}, NOW, provisional)
+    by_round = {r.round: r for r in season.rounds}
+    assert by_round[21].status == "upcoming" and by_round[21].provisional is True
+    assert (by_round[21].winner.driver_id, by_round[21].winner.team_id) == ("norris", "mclaren")
+    assert by_round[20].provisional is False and by_round[20].winner.driver_id != "piastri"
+    assert not any(r.provisional for r in season.rounds if r.round != 21)
+    out = season.model_dump(mode="json", by_alias=True)["rounds"]
+    assert out[20]["provisional"] is True and out[19]["provisional"] is False
 
 
 def test_short_name_falls_back_to_openf1_then_jolpica(season_data):

@@ -118,6 +118,7 @@
    "rounds[].country": "string",
    "rounds[].locality": "string",
    "rounds[].name": "string",
+   "rounds[].provisional": "boolean",
    "rounds[].round": "integer",
    "rounds[].sessions": "array",
    "rounds[].sessions[]": "object",

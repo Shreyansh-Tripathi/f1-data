@@ -29,6 +29,7 @@ class Round(Model):
     sprint: bool
     sessions: list[SeasonSession]
     winner: RoundWinner | None
+    provisional: bool = False  # winner is OpenF1's P1: the race is published but Jolpica lacks the round
 
 
 class CancelledEvent(Model):
