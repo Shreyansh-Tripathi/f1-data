@@ -120,14 +120,15 @@ def main() -> None:
     winner = int(race_results[-1]["Results"][0]["number"])
     openf1.location(client, brazil["session_key"], winner, "2026-11-08T18:00:00", "2026-11-08T18:01:30")
 
-    # F1DB: keep the release metadata and a subset of the DB (current entrants), served as a zip in tests.
-    release = f1db.latest_release(client)
-    db = f1db.download_json_single(client, release)
+    # F1DB: keep the latest-release redirect and a subset of the DB (current entrants), served as a zip in tests.
+    tag = f1db.latest_tag(client)
+    client.index[f1db.LATEST] = {"kind": "redirect", "location": f"{f1db.REPO}/releases/tag/{tag}"}
+    db = f1db.download_json_single(client, tag)
     season = next(s for s in db["seasons"] if s["year"] == YEAR)
     ids = {d["driverId"] for e in season["entrants"] for c in e["constructors"] for d in c["drivers"]}
     subset = f1db_subset(db, ids, season)
-    asset = next(a for a in release["assets"] if a["name"] == f1db.ASSET)
-    client.index[asset["browser_download_url"]] = {"file": save(asset["browser_download_url"], subset), "kind": "zip"}
+    url = f1db.asset_url(tag)
+    client.index[url] = {"file": save(url, subset), "kind": "zip"}
 
     (OUT / "index.json").write_text(json.dumps(client.index, indent=1, sort_keys=True) + "\n")
     total = sum(p.stat().st_size for p in OUT.iterdir())

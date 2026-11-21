@@ -32,6 +32,8 @@ def _respond(request: httpx.Request) -> httpx.Response:
     entry = _index().get(str(request.url))
     if entry is None:
         return httpx.Response(599, text=f"no fixture for {request.url}")
+    if entry["kind"] == "redirect":
+        return httpx.Response(302, headers={"location": entry["location"]})
     body = _read(entry["file"])
     if entry["kind"] == "zip":
         buf = io.BytesIO()

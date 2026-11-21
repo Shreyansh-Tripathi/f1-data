@@ -30,7 +30,20 @@ def test_multiviewer_rejects_foreign_urls(client):
 
 
 def test_f1db_subset_roundtrip(client):
-    release = f1db.latest_release(client)
-    db = f1db.download_json_single(client, release)
+    tag = f1db.latest_tag(client)
+    assert tag == "v2026.20.0"
+    db = f1db.download_json_single(client, tag)
     assert {"drivers", "seasons"} <= set(db)
     assert any(d["id"] == "fernando-alonso" for d in db["drivers"])
+
+
+def test_f1db_latest_tag_rejects_unexpected_redirect(tmp_path):
+    import httpx
+    import pytest
+
+    from f1data.http import HttpClient
+
+    transport = httpx.MockTransport(lambda r: httpx.Response(302, headers={"location": "https://github.com/login"}))
+    client = HttpClient(tmp_path, transport=transport, sleep=lambda s: None)
+    with pytest.raises(ValueError, match="unexpected F1DB"):
+        f1db.latest_tag(client)

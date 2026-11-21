@@ -234,7 +234,7 @@ def test_race_control_kind_and_named_cars(message, category, kind, cars):
 
 @pytest.fixture(scope="module")
 def db(shared_client):
-    return f1db.download_json_single(shared_client, f1db.latest_release(shared_client))
+    return f1db.download_json_single(shared_client, f1db.latest_tag(shared_client))
 
 
 @pytest.fixture(scope="module")

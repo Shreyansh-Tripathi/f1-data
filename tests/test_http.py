@@ -120,3 +120,33 @@ def test_get_bytes_caches(tmp_path):
     assert client.get_bytes(url, final=True) == b"zip"
     assert client.get_bytes(url, final=True) == b"zip"
     assert len(seen) == 1
+
+
+LATEST = "https://github.com/f1db/f1db/releases/latest"
+TAGGED = "https://github.com/f1db/f1db/releases/tag/v2026.21.0"
+
+
+def test_redirect_target_returns_location_without_following_and_caches(tmp_path):
+    client, t, seen = make(tmp_path, lambda r: httpx.Response(302, headers={"location": TAGGED}))
+    assert client.redirect_target(LATEST) == TAGGED
+    assert client.redirect_target(LATEST) == TAGGED
+    assert [str(r.url) for r in seen] == [LATEST]
+    t.now += 3601  # provisional TTL
+    client.redirect_target(LATEST)
+    assert len(seen) == 2
+
+
+def test_redirect_target_falls_back_to_last_known_target(tmp_path, caplog):
+    responses = iter([httpx.Response(302, headers={"location": TAGGED}), httpx.Response(403, text="rate limited")])
+    client, t, _ = make(tmp_path, lambda r: next(responses))
+    client.redirect_target(LATEST)
+    t.now += 3601
+    with caplog.at_level(logging.WARNING):
+        assert client.redirect_target(LATEST) == TAGGED
+    assert "last known target" in caplog.text
+
+
+def test_redirect_target_raises_without_a_known_target(tmp_path):
+    client, _, _ = make(tmp_path, lambda r: httpx.Response(403, text="rate limited"))
+    with pytest.raises(HttpError):
+        client.redirect_target(LATEST)

@@ -191,7 +191,7 @@ class Build:
 
     def f1db(self) -> dict[str, Any]:
         if self._f1db is None:
-            self._f1db = f1db.download_json_single(self.c, f1db.latest_release(self.c))
+            self._f1db = f1db.download_json_single(self.c, f1db.latest_tag(self.c))
         return self._f1db
 
     def build_driver_stats(self) -> None:

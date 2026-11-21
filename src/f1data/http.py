@@ -15,7 +15,7 @@ from collections import deque
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlencode, urlparse
+from urllib.parse import urlencode, urljoin, urlparse
 
 import httpx
 
@@ -31,7 +31,6 @@ MIN_INTERVAL_S = {
     "api.openf1.org": 2.0,  # observed ~30 req / min (429 + Retry-After: 60 when faster)
     "api.jolpi.ca": 0.5,  # ~4 req / s
     "api.multiviewer.app": 1.0,
-    "api.github.com": 1.0,
     "github.com": 1.0,
 }
 # Rolling one-hour request budget per host.
@@ -124,6 +123,27 @@ class HttpClient:
         self._write_cache(meta_path, {"url": url, "fetchedAt": self._clock(), "final": final, "body": None})
         return resp.content
 
+    def redirect_target(self, url: str) -> str:
+        """Where `url` redirects to (e.g. GitHub's "latest release" page to the tagged one). Cached for the
+        provisional TTL; if the request fails, the last known target is used and the failure logged."""
+        path = self._cache_path(url, ".json")
+        cached = self._read_cache(path, False)
+        if cached is not None:
+            return cached["body"]
+        try:
+            resp = self._fetch(url, follow_redirects=False)
+            if not resp.is_redirect or "location" not in resp.headers:
+                raise HttpError(url, resp.status_code, resp.text)
+        except (HttpError, httpx.HTTPError) as exc:
+            if not path.exists():
+                raise
+            stale = json.loads(path.read_text())["body"]
+            log.warning("%s; using the last known target %s", exc, stale)
+            return stale
+        target = urljoin(url, resp.headers["location"])
+        self._write_cache(path, {"url": url, "fetchedAt": self._clock(), "final": False, "body": target})
+        return target
+
     # ------------------------------------------------------------------ cache
 
     def _cache_path(self, key: str, suffix: str) -> Path:
@@ -152,14 +172,14 @@ class HttpClient:
 
     # ------------------------------------------------------------------ network
 
-    def _fetch(self, url: str) -> httpx.Response:
+    def _fetch(self, url: str, *, follow_redirects: bool = True) -> httpx.Response:
         if self.offline:
             raise CacheMiss(url)
         host = urlparse(url).hostname or ""
         for attempt in range(MAX_RETRIES + 1):
             self._throttle(host)
             try:
-                resp = self._client.get(url)
+                resp = self._client.get(url, follow_redirects=follow_redirects)
             except httpx.TransportError as exc:
                 if attempt == MAX_RETRIES:
                     raise

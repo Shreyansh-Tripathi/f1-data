@@ -26,7 +26,7 @@ def test_classify_logs_openf1_mismatch(caplog):
 
 @pytest.fixture(scope="module")
 def stats(season_data, shared_client):
-    db = f1db.download_json_single(shared_client, f1db.latest_release(shared_client))
+    db = f1db.download_json_single(shared_client, f1db.latest_tag(shared_client))
     d = season_data
     out = build_driver_stats(2026, d["known"], d["results"], d["qualifying"], d["sprint"], db, NOW)
     return {s.driver_id: s for s in out.drivers}, d

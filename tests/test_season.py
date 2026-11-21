@@ -30,7 +30,7 @@ def test_match_tolerates_one_day_offset(season_data):
 
 @pytest.fixture(scope="module")
 def db(shared_client):
-    return f1db.download_json_single(shared_client, f1db.latest_release(shared_client))
+    return f1db.download_json_single(shared_client, f1db.latest_tag(shared_client))
 
 
 def test_build_season(season_data):
