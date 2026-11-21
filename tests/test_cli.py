@@ -1,11 +1,14 @@
 """End-to-end, offline: build round 20 of 2026 from recorded fixtures."""
 
 import json
+import logging
 from datetime import UTC, datetime
 
+import httpx
 from conftest import fixture_client
 
 from f1data.cli import main
+from f1data.http import HttpClient
 
 FINAL_NOW = datetime(2026, 11, 12, tzinfo=UTC)  # > 72 h after the Brazil race
 EARLY_NOW = datetime(2026, 11, 9, 12, tzinfo=UTC)  # < 72 h: provisional
@@ -129,4 +132,26 @@ def test_failed_full_build_does_not_count_as_full(tmp_path):
         ["build", "--year", "2026", "--out", str(out)], client=fixture_client(tmp_path / "cache"), now=FINAL_NOW
     )
     assert code == 1
+    assert json.loads((out / "manifest.json").read_text())["lastFullBuildAt"] is None
+
+
+def test_openf1_live_lockout_stops_the_run_without_failing(tmp_path, caplog):
+    # OpenF1 locks out unauthenticated clients while a session is live, past sessions included.
+    from conftest import _respond
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "api.openf1.org" and request.url.path.endswith("/laps"):
+            return httpx.Response(401, json={"detail": "Live F1 session in progress. Global API access ..."})
+        return _respond(request)
+
+    out = tmp_path / "site"
+    client = HttpClient(tmp_path / "cache", transport=httpx.MockTransport(handler), sleep=lambda s: None)
+    with caplog.at_level(logging.WARNING):
+        code = main(["build", "--year", "2026", "--round", "20", "--out", str(out)], client=client, now=FINAL_NOW)
+    assert code == 0
+    assert "OpenF1 is locked" in caplog.text
+    assert "failed:" not in caplog.text
+    got = set(files(out))
+    assert "2026/season.json" in got  # season-level files written before the lockout are kept
+    assert not any(p.startswith("2026/20/") for p in got)  # no session got past laps
     assert json.loads((out / "manifest.json").read_text())["lastFullBuildAt"] is None

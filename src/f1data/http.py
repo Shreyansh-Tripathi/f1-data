@@ -38,6 +38,7 @@ HOURLY_BUDGET = {"api.jolpi.ca": 180}
 
 OPENF1_HOST = "api.openf1.org"
 OPENF1_EMPTY = "No results found."
+OPENF1_LOCKED = "Live F1 session in progress"
 
 
 class HttpError(Exception):
@@ -45,6 +46,10 @@ class HttpError(Exception):
         super().__init__(f"HTTP {status} for {url}: {body[:200]}")
         self.url = url
         self.status = status
+
+
+class OpenF1Locked(HttpError):
+    """OpenF1 refuses unauthenticated requests, past sessions included, while a session is live."""
 
 
 class CacheMiss(Exception):
@@ -102,6 +107,8 @@ class HttpClient:
         if resp.status_code == 404 and urlparse(key).hostname == OPENF1_HOST and _is_openf1_empty(resp):
             log.warning("OpenF1 404 mapped to []: %s", key)
             body: Any = []
+        elif resp.status_code == 401 and urlparse(key).hostname == OPENF1_HOST and _is_openf1_locked(resp):
+            raise OpenF1Locked(key, resp.status_code, resp.text)
         elif not resp.is_success:
             raise HttpError(key, resp.status_code, resp.text)
         else:
@@ -220,6 +227,13 @@ class HttpClient:
 def _is_openf1_empty(resp: httpx.Response) -> bool:
     try:
         return resp.json().get("detail") == OPENF1_EMPTY
+    except (ValueError, AttributeError):
+        return False
+
+
+def _is_openf1_locked(resp: httpx.Response) -> bool:
+    try:
+        return str(resp.json().get("detail", "")).startswith(OPENF1_LOCKED)
     except (ValueError, AttributeError):
         return False
 

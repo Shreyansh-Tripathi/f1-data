@@ -30,7 +30,7 @@ from f1data.build.session import (
 )
 from f1data.build.standings import build_driver_standings, build_team_standings, title_context
 from f1data.calendar import should_build
-from f1data.http import HttpClient, HttpError
+from f1data.http import HttpClient, HttpError, OpenF1Locked
 from f1data.io import is_complete, read_json, write_model
 from f1data.manifest import write_manifest
 from f1data.models.meta import PublishLag, SessionLag
@@ -64,6 +64,7 @@ class Build:
         self.lag = PublishLag.model_validate(previous).sessions if previous else {}
         self.lag_changed = False
         self.failures = 0
+        self.locked = False
         self.written = 0
         self._f1db: dict[str, Any] | None = None
 
@@ -75,6 +76,8 @@ class Build:
     def guarded(self, what: str, fn: Callable[[], None]) -> None:
         try:
             fn()
+        except OpenF1Locked:
+            raise  # every later OpenF1 request would fail too
         except Exception:  # one failure must not stop the run
             self.failures += 1
             log.exception("failed: %s", what)
@@ -82,6 +85,20 @@ class Build:
     # ------------------------------------------------------------------ run
 
     def run(self, round_filter: int | None, session_filter: str | None) -> None:
+        try:
+            self.build_all(round_filter, session_filter)
+        except OpenF1Locked as exc:
+            # Not a failure: nothing is wrong with the data. Keep what was written, don't count this as a full
+            # build, and let the next run pick up the rest.
+            self.locked = True
+            log.warning("OpenF1 is locked while a session is live; stopping, the next run retries (%s)", exc.url)
+        if self.lag_changed:
+            write_model(self.lag_file, PublishLag(generated_at=self.now, sessions=self.lag))
+        full_build = round_filter is None and session_filter is None and not self.failures and not self.locked
+        write_manifest(self.out, self.now, full_build)
+        log.info("done: %d files written, %d failures, requests %s", self.written, self.failures, self.c.request_counts)
+
+    def build_all(self, round_filter: int | None, session_filter: str | None) -> None:
         c, y = self.c, self.year
         self.meetings = openf1.meetings(c, y)
         self.sessions = openf1.sessions(c, y)
@@ -104,11 +121,6 @@ class Build:
             for code in SESSION_CODES:
                 if session_filter in (None, code) and code in w.sessions:
                     self.guarded(f"round {w.round} {code}", lambda w=w, code=code: self.build_session(w, code))
-        if self.lag_changed:
-            write_model(self.lag_file, PublishLag(generated_at=self.now, sessions=self.lag))
-        full_build = round_filter is None and session_filter is None and not self.failures
-        write_manifest(self.out, self.now, full_build)
-        log.info("done: %d files written, %d failures, requests %s", self.written, self.failures, self.c.request_counts)
 
     # ------------------------------------------------------------------ season-level
 

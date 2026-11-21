@@ -3,7 +3,7 @@ import logging
 import httpx
 import pytest
 
-from f1data.http import MIN_INTERVAL_S, CacheMiss, HttpClient, HttpError
+from f1data.http import MIN_INTERVAL_S, CacheMiss, HttpClient, HttpError, OpenF1Locked
 
 
 class FakeTime:
@@ -120,6 +120,25 @@ def test_get_bytes_caches(tmp_path):
     assert client.get_bytes(url, final=True) == b"zip"
     assert client.get_bytes(url, final=True) == b"zip"
     assert len(seen) == 1
+
+
+LOCKED = {"detail": "Live F1 session in progress. Global API access (including past sessions) is restricted."}
+
+
+def test_openf1_live_lockout_raises_openf1_locked_without_retry_or_cache(tmp_path):
+    client, _, seen = make(tmp_path, lambda r: httpx.Response(401, json=LOCKED))
+    for _ in range(2):
+        with pytest.raises(OpenF1Locked) as err:
+            client.get_json("https://api.openf1.org/v1/meetings", {"year": 2026})
+        assert err.value.status == 401
+    assert len(seen) == 2  # not retried within a call, not cached between calls
+
+
+def test_other_401_is_a_plain_http_error(tmp_path):
+    client, _, _ = make(tmp_path, lambda r: httpx.Response(401, json={"detail": "nope"}))
+    with pytest.raises(HttpError) as err:
+        client.get_json("https://api.openf1.org/v1/meetings")
+    assert not isinstance(err.value, OpenF1Locked)
 
 
 LATEST = "https://github.com/f1db/f1db/releases/latest"
