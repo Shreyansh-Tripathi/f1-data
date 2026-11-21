@@ -108,14 +108,20 @@ Python 3.12, `uv`, `httpx`, `pydantic`, `numpy`, `pytest`, `ruff`.
 
 ```
 src/f1data/
-  http.py            # shared client: retry, rate limit, cache
+  http.py            # shared client: retry, rate limit, cache, redirect_target, token only to api.github.com
   sources/           # openf1.py, jolpica.py, f1db.py, multiviewer.py  (raw fetch only)
-  models/            # pydantic output models = the contract
-  build/             # finality.py, ids.py, season.py, standings.py, drivers.py, circuits.py, session.py, replay.py
+  models/            # pydantic output models = the contract; contract.py = OUTPUT_FILES registry + snapshot shape
+  build/             # finality.py, ids.py, classify.py, season.py, standings.py, drivers.py, driver_stats.py,
+                     # circuits.py, session.py  (replay.py: Phase 5, not written yet)
+  calendar.py        # should_build / should_poll: pure scheduling decisions
   io.py              # validated, deterministic writes
   manifest.py
-  cli.py             # `f1data build --year 2026 [--round N] [--session race] [--force] [--offline]`
-tests/               # unit tests on fixtures in tests/fixtures/ (recorded JSON, no network)
+  cli.py             # `f1data build --year 2026 [--round N] [--session race] [--force] [--offline] [--ttl-minutes M]`
+                     # `f1data should-build` / `f1data should-poll` (used by build.yml)
+scripts/             # record_fixtures.py (re-record tests/fixtures/http), update_contract_snapshot.py,
+                     # verify_sources.py (Phase 0, still uses the GitHub API; not part of the build)
+.github/scripts/     # build-and-publish.sh: the build + publish + polling loop run by build.yml
+tests/               # unit tests on fixtures in tests/fixtures/ (recorded JSON, no network); contract/snapshot.json
 site/v1/             # build output (published to gh-pages, not committed to main)
 ```
 
@@ -156,19 +162,50 @@ uv run f1data build --year 2026
 - `.github/dependabot.yml`: weekly updates for GitHub Actions and Python. Python uses the `uv` ecosystem so `uv.lock` is updated together with `pyproject.toml`.
 - Pages must be configured to serve the `gh-pages` branch root. The data URL is `https://shreyansh-tripathi.github.io/f1-data/v1/`.
 
-## Working style
+## Conventions
 
 - Plan before multi-file changes; keep diffs small; one concern per commit.
-- Don't add Co-Authored-By trailers to commits.
-- Add a fixture-based test for every builder.
+- Don't add Co-Authored-By trailers to commits (this overrides any tool default).
+- Commit and push only when the owner asks. Confirm outward-facing actions (publishing, cancelling runs) first unless asked to proceed.
+- Add a fixture-based test for every builder. Tests are offline; new source responses are recorded with `uv run scripts/record_fixtures.py` (add the session keys there) and replayed from `tests/fixtures/http/index.json`.
+- Every check before committing: `uv run ruff check . && uv run ruff format --check . && uv run pytest`. Ruff line length is 120.
+- Output model changes: follow the Contract change policy, run `uv run python scripts/update_contract_snapshot.py`, commit the snapshot, and tell the owner about any schemaVersion bump (the app pins supported versions).
+- Publish by hand with `gh workflow run build.yml -f year=2026` (add `-f force=true` to rebuild complete sessions, `-f poll=true` to start a polling run). Pages caches files for up to 10 min.
+- Report results with run ids and timestamps; verify on the live files (`git show origin/gh-pages:v1/...` or the Pages URL), not only in logs.
 - When a source behaves differently than documented here, update the Sources table and the Findings log below.
 
 ## Status
 
 - [x] Phase 0 — verify sources (see Findings)
 - [x] Phase 1 — pipeline + Actions + Pages
-- [ ] Phase 5 — replay builder
+- [x] Contract additions for the app: round `shortName`/`winner`, team `shortName`, penalty `reason`, driver-stats `rounds`, title status, career poles/fastest laps, pit-stop filtering
+- [x] Phase 4 — session detail: `periods`, `statusText`/`retirementReason`, race-control `kind`/`driverIds`/`text`/`shortText`/`deletion`, qualifying `status`, session `drivers`; contract change policy + snapshot test
+- [x] Scheduling: calendar-aware builds, polling runs that chain themselves, OpenF1 live-lockout handling, F1DB via `GITHUB_TOKEN`, races from OpenF1 before Jolpica, `provisional`/`final` split, publish lag (`meta/lag.json`)
+- [ ] Phase 5 — replay builder (next, see Current work)
 - [ ] Phase 6 — radio + local whisper.cpp transcription
+
+## Current work (as of 2026-11-21 07:00Z)
+
+**State.** Everything is committed and pushed (`main` = `f83c049` plus this docs commit); CI is green; 247 tests pass.
+- A polling chain is running for round 21 (Las Vegas): run 44876181267 started 06:34Z on `f83c049`, polls every 15 min, and at about 12:05Z dispatches its successor. One handover has been verified (44874815396 → 44876181267, `gh run list`).
+- Live files are on the new versions: session files 2, `race-control.json` 3 (`provisional`/`final` split). The owner was told; the app must support these versions.
+- Round 21 published so far: FP1, FP2, FP3, qualifying (lag 55 min). Race: 2026-11-22 04:00–06:00Z.
+
+**Check after the Las Vegas race** (first live test of several paths):
+- Polls during the session hit the OpenF1 lockout (401) and are skipped, not failed.
+- The race summary appears from OpenF1 first with `provisional: true`, then flips to `false` once Jolpica has round 21, and 30-min polling stops then (or at the 48 h cap, 2026-11-24 06:00Z).
+- Every handover dispatches a successor while `should-poll` is true; `meta/lag.json` gets the race entry.
+- F1DB was still `v2026.20.0` on 2026-11-21; round 21 retirement reasons and qualifying codes fill in when F1DB publishes it.
+
+**Open decisions (owner):**
+- Optional additive classification value `notClassified` for cars running at the end but under 90% (Stroll round 1, Albon round 7, Hülkenberg round 12 sprint); today they are `dnf`.
+- MultiViewer returns 404 for `madring` and `sepang` (2026); those circuits use the OpenF1-location outline fallback (no corners). Not raised with the owner yet.
+
+**Next step: Phase 5, Race Replay** (`replay.json`). Known so far:
+- Contract line: columnar per driver (`t`, `x`, `y`, `pos`), 1 Hz, integer coords in the OpenF1 location frame (same as `circuits/*.json`), < 2 MB per session (Phase 0: Brazil at 1 Hz = 3.12 MB raw JSON, 0.98 MB gzip; Pages serves gzip).
+- Source: OpenF1 `location`, fetched per driver (~4.5 s each, ~22 requests per race, ~100 MB raw), cut to the session window; `pos` from OpenF1 `position`. `sources/openf1.location` already exists (used for the outline fallback).
+- To do: `build/replay.py` + `Replay` model registered in `OUTPUT_FILES` (snapshot update), small recorded fixtures (a short window, like the existing 90 s Brazil sample), wiring in `cli.build_session`, a size check in tests, and a Findings entry with real sizes and request counts.
+- Ask the owner before starting: which sessions get a replay (race + sprint only?), what `t` is relative to (session start / race start, seconds), whether to include lap numbers or track status per sample, and whether to backfill the whole 2026 season (~22 extra OpenF1 requests per session at 2 s spacing) or only new rounds.
 
 ## Findings log
 
@@ -248,5 +285,6 @@ Findings:
 
 - OpenF1 locks out unauthenticated clients while a session is live, including past sessions: run 44668258214 (2026-11-20 03:31Z) got 401 `Live F1 session in progress. Global API access (including past sessions) is restricted to authenticated users until the session ends.` on `meetings?year=2026`. That was 29 min before FP2 started (04:00Z), so the lockout starts before the session, not only during it. A key is paid (Stripe link), so the build now treats the 401 as a skip.
 - `api.github.com/repos/f1db/f1db/releases/latest` returned 403 `API rate limit exceeded for 3.42.157.122` (run 44856340066, 2026-11-21 02:31Z): the unauthenticated limit is 60 req/h per IP and Actions runners share IPs. Season, drivers/teams and driver-stats failed. The tag now comes from the `github.com` redirect (302 to `/releases/tag/<tag>`), with the last known tag as fallback.
-- GitHub ran the hourly `17 * * * *` schedule only 3–4 times a day from 2026-11-12 to 2026-11-21 (start times drifting by 4–31 min, gaps up to 10 h), so publish lag on race weekends was up to 11.5 h (FP1). Polling runs now chain themselves (each dispatches its successor) while a round is in progress or its race is provisional; the schedule is only a backup starter.
+- GitHub ran the hourly `17 * * * *` schedule only 3–4 times a day from 2026-11-12 to 2026-11-21 (start times drifting by 4–31 min, gaps up to 10 h), so publish lag on race weekends was up to 11.5 h (FP1). Polling runs now chain themselves (each dispatches its successor) while a round is in progress or its race is provisional; the schedule is only a backup starter. Verified 2026-11-21: run 44874815396 (20 min budget) polled at 06:17Z and 06:33Z, then dispatched 44876181267 at 06:34:24Z, which published at 06:34:48Z.
 - Race and sprint publishing waited on Jolpica ("Jolpica has no classification yet"); they now publish from OpenF1 first. Jolpica had no 2026 round 21 qualifying at 05:57Z, 55 min after the session, while OpenF1 had it.
+- `workflow_dispatch` triggered with `GITHUB_TOKEN` does start a new run (unlike most events triggered by that token); it needs `permissions: actions: write`. A queued run waits in the `build-data` concurrency group; GitHub keeps only one pending run per group, so a newer pending run replaces an older one.
