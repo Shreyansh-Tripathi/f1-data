@@ -7,7 +7,7 @@ import pytest
 
 from f1data.build import ids
 from f1data.build.season import build_season
-from f1data.calendar import should_build
+from f1data.calendar import should_build, should_poll
 from f1data.cli import main
 
 
@@ -97,3 +97,15 @@ def test_cli_reads_published_files(tmp_path, season, capsys):
     assert should_build_cli(tmp_path, utc(2026, 11, 16, 12), capsys) == "true"  # fallback
     assert should_build_cli(tmp_path, utc(2026, 11, 7, 12), capsys) == "true"  # weekend
     assert should_build_cli(tmp_path, utc(2027, 1, 2), capsys) == "true"  # 2027/season.json missing
+
+
+def test_should_poll_only_while_a_round_is_in_progress(season):
+    # São Paulo: FP1 starts 2026-11-06 15:30Z, race ends 2026-11-08 19:00Z; polling stops 6 h later.
+    assert should_poll(utc(2026, 11, 6, 15, 29), season)[0] is False
+    assert should_poll(utc(2026, 11, 6, 15, 30), season)[0] is True
+    assert should_poll(utc(2026, 11, 7, 3), season)[0] is True  # overnight between sessions
+    assert should_poll(utc(2026, 11, 9, 1), season)[0] is True
+    decision, reason = should_poll(utc(2026, 11, 9, 1, 1), season)
+    assert decision is False and reason == "no round in progress"
+    assert should_build(utc(2026, 11, 9, 1, 1), season, None)[0] is True  # the 72 h tail is left to hourly runs
+    assert should_poll(utc(2026, 11, 1), None)[0] is False

@@ -47,3 +47,69 @@ def test_f1db_latest_tag_rejects_unexpected_redirect(tmp_path):
     client = HttpClient(tmp_path, transport=transport, sleep=lambda s: None)
     with pytest.raises(ValueError, match="unexpected F1DB"):
         f1db.latest_tag(client)
+
+
+class FakeGitHub:
+    """api.github.com and github.com responses keyed by host; records requests."""
+
+    def __init__(self, api, web):
+        self.responses = {"api.github.com": api, "github.com": web}
+        self.seen = []
+
+    def __call__(self, request):
+        import httpx
+
+        self.seen.append(request)
+        status, body = self.responses[request.url.host]
+        if status == 200:
+            return httpx.Response(200, json=body)
+        if status == 302:
+            return httpx.Response(302, headers={"location": body})
+        return httpx.Response(status, text="rate limited")
+
+
+def github_client(tmp_path, fake, clock=None):
+    import httpx
+
+    from f1data.http import HttpClient
+
+    kw = {"clock": clock} if clock else {}
+    return HttpClient(tmp_path, transport=httpx.MockTransport(fake), sleep=lambda s: None, **kw)
+
+
+TAG_URL = "https://github.com/f1db/f1db/releases/tag/v2026.21.0"
+
+
+def test_f1db_tag_uses_api_with_github_token(tmp_path, monkeypatch):
+    monkeypatch.setenv("GITHUB_TOKEN", "t0k")
+    fake = FakeGitHub((200, {"tag_name": "v2026.21.0"}), (302, TAG_URL))
+    assert f1db.latest_tag(github_client(tmp_path, fake)) == "v2026.21.0"
+    assert [(r.url.host, r.headers.get("authorization")) for r in fake.seen] == [("api.github.com", "Bearer t0k")]
+
+
+def test_f1db_tag_falls_back_to_redirect_when_api_fails(tmp_path, monkeypatch):
+    monkeypatch.setenv("GITHUB_TOKEN", "t0k")
+    fake = FakeGitHub((403, None), (302, TAG_URL))
+    assert f1db.latest_tag(github_client(tmp_path, fake)) == "v2026.21.0"
+    assert "authorization" not in fake.seen[-1].headers  # never to github.com
+
+
+def test_f1db_tag_without_token_skips_the_api(tmp_path, monkeypatch):
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    fake = FakeGitHub((200, {"tag_name": "wrong"}), (302, TAG_URL))
+    assert f1db.latest_tag(github_client(tmp_path, fake)) == "v2026.21.0"
+    assert [r.url.host for r in fake.seen] == ["github.com"]
+
+
+def test_f1db_tag_falls_back_to_cached_release(tmp_path, monkeypatch):
+    import pytest
+
+    now = [1_000_000.0]
+    monkeypatch.setenv("GITHUB_TOKEN", "t0k")
+    ok = FakeGitHub((200, {"tag_name": "v2026.20.0"}), (302, TAG_URL))
+    assert f1db.latest_tag(github_client(tmp_path, ok, lambda: now[0])) == "v2026.20.0"
+    now[0] += 7200  # cache expired
+    down = FakeGitHub((403, None), (500, None))
+    assert f1db.latest_tag(github_client(tmp_path, down, lambda: now[0])) == "v2026.20.0"
+    with pytest.raises(Exception):  # noqa: B017 - nothing cached anywhere
+        f1db.latest_tag(github_client(tmp_path / "empty", down))

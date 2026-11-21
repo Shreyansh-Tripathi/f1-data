@@ -23,6 +23,10 @@ on:
         description: Rebuild sessions even if complete
         type: boolean
         default: false
+      poll:
+        description: Keep polling every 15 min while a round is in progress (ignored with round or session)
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -34,20 +38,16 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 350 # a polling run lasts up to 5.5 h; GitHub's job limit is 6 h
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # Runs start cold: restore the published tree so complete sessions are skipped.
       - name: Check out gh-pages into site/
-        id: pages
         run: |
           mkdir -p site
           if git fetch --depth 1 origin gh-pages; then
             git archive FETCH_HEAD | tar -x -C site
-          fi
-          if [ -f site/v1/manifest.json ]; then
-            echo "manifest=$(sha256sum site/v1/manifest.json | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
           fi
 
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
@@ -56,18 +56,31 @@ jobs:
 
       # Scheduled runs build inside a round's window (first session to 72 h after the last), when the
       # last full build is over 24 h old, or before the season is published. Manual runs always build.
-      - name: Decide whether to build
+      # While a round is in progress (first session to 6 h after the last) the run keeps polling: GitHub
+      # starts the hourly schedule only a few times a day.
+      - name: Decide whether to build and poll
         id: decide
         env:
           EVENT: ${{ github.event_name }}
+          POLL_INPUT: ${{ inputs.poll }}
+          ROUND: ${{ inputs.round }}
+          SESSION: ${{ inputs.session }}
         run: |
+          year=$(date -u +%Y)
           if [ "$EVENT" = workflow_dispatch ]; then
-            echo "build=true" >> "$GITHUB_OUTPUT"
+            decision=true
           else
-            decision=$(uv run f1data should-build --year "$(date -u +%Y)") # a crash fails the step
+            decision=$(uv run f1data should-build --year "$year") # a crash fails the step
             [[ "$decision" =~ ^(true|false)$ ]] || { echo "unexpected: $decision"; exit 1; }
-            echo "build=$decision" >> "$GITHUB_OUTPUT"
           fi
+          poll=false
+          if [ "$decision" = true ] && { [ "$EVENT" != workflow_dispatch ] || [ "$POLL_INPUT" = true ]; } \
+            && [ -z "$ROUND" ] && { [ -z "$SESSION" ] || [ "$SESSION" = all ]; }; then
+            poll=$(uv run f1data should-poll --year "$year")
+            [[ "$poll" =~ ^(true|false)$ ]] || { echo "unexpected: $poll"; exit 1; }
+          fi
+          echo "build=$decision" >> "$GITHUB_OUTPUT"
+          echo "poll=$poll" >> "$GITHUB_OUTPUT"
 
       - name: Restore HTTP cache
         if: steps.decide.outputs.build == 'true'
@@ -77,18 +90,20 @@ jobs:
           key: f1data-http-${{ github.run_id }}
           restore-keys: f1data-http-
 
-      - name: Build
-        id: build
+      # Builds, then publishes to gh-pages when manifest.json changed; repeats while polling.
+      - name: Build and publish
         if: steps.decide.outputs.build == 'true'
-        continue-on-error: true # publish whatever validated files were written; fail the job afterwards
         env:
           YEAR: ${{ inputs.year }}
           ROUND: ${{ inputs.round }}
           SESSION: ${{ inputs.session }}
           FORCE: ${{ inputs.force }}
+          POLL: ${{ steps.decide.outputs.poll }}
+          GITHUB_TOKEN: ${{ github.token }} # only for api.github.com (F1DB release lookup)
         run: |
           YEAR="${YEAR:-$(date -u +%Y)}"
           [[ "$YEAR" =~ ^[0-9]{4}$ ]] || { echo "bad year: $YEAR"; exit 2; }
+          export YEAR
           args=(--year "$YEAR")
           if [ -n "$ROUND" ]; then
             [[ "$ROUND" =~ ^[0-9]+$ ]] || { echo "bad round: $ROUND"; exit 2; }
@@ -96,34 +111,4 @@ jobs:
           fi
           if [ -n "$SESSION" ] && [ "$SESSION" != all ]; then args+=(--session "$SESSION"); fi
           if [ "$FORCE" = true ]; then args+=(--force); fi
-          uv run f1data build "${args[@]}"
-
-      # gh-pages holds a single squashed commit: build an orphan commit from site/ and force-push it,
-      # but only when manifest.json changed.
-      - name: Publish to gh-pages
-        if: steps.decide.outputs.build == 'true'
-        env:
-          BEFORE: ${{ steps.pages.outputs.manifest }}
-        run: |
-          if [ ! -f site/v1/manifest.json ]; then
-            echo "no manifest written; nothing to publish"
-            exit 0
-          fi
-          AFTER=$(sha256sum site/v1/manifest.json | cut -d' ' -f1)
-          if [ "$AFTER" = "$BEFORE" ]; then
-            echo "manifest.json unchanged; nothing to publish"
-            exit 0
-          fi
-          touch site/.nojekyll
-          export GIT_INDEX_FILE="$RUNNER_TEMP/gh-pages.index"
-          git --work-tree=site add -A .
-          tree=$(git write-tree)
-          commit=$(git -c user.name="github-actions[bot]" \
-            -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
-            commit-tree "$tree" -m "data: $(date -u +%Y-%m-%dT%H:%M:%SZ) (run $GITHUB_RUN_ID)")
-          git push --force origin "$commit:refs/heads/gh-pages"
-          echo "published $commit"
-
-      - name: Fail if the build had errors
-        if: steps.decide.outputs.build == 'true' && steps.build.outcome == 'failure'
-        run: exit 1
+          .github/scripts/build-and-publish.sh "${args[@]}"

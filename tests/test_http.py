@@ -155,17 +155,28 @@ def test_redirect_target_returns_location_without_following_and_caches(tmp_path)
     assert len(seen) == 2
 
 
-def test_redirect_target_falls_back_to_last_known_target(tmp_path, caplog):
-    responses = iter([httpx.Response(302, headers={"location": TAGGED}), httpx.Response(403, text="rate limited")])
-    client, t, _ = make(tmp_path, lambda r: next(responses))
-    client.redirect_target(LATEST)
-    t.now += 3601
-    with caplog.at_level(logging.WARNING):
-        assert client.redirect_target(LATEST) == TAGGED
-    assert "last known target" in caplog.text
-
-
 def test_redirect_target_raises_without_a_known_target(tmp_path):
     client, _, _ = make(tmp_path, lambda r: httpx.Response(403, text="rate limited"))
     with pytest.raises(HttpError):
         client.redirect_target(LATEST)
+
+
+def test_token_only_sent_to_github_api(tmp_path):
+    client, _, seen = make(tmp_path, lambda r: httpx.Response(200, json={"tag_name": "v1"}))
+    client.get_json("https://api.github.com/repos/f1db/f1db/releases/latest", token="t0k")
+    assert seen[0].headers["authorization"] == "Bearer t0k"
+    for url in ("https://api.openf1.org/v1/x", "https://api.jolpi.ca/ergast/f1/2026.json", "https://github.com/x"):
+        with pytest.raises(ValueError, match="refusing to send a token"):
+            client.get_json(url, token="t0k")
+    assert len(seen) == 1
+
+
+def test_ttl_is_configurable(tmp_path):
+    client, t, seen = make(tmp_path, lambda r: httpx.Response(200, json=[]), ttl_s=600)
+    client.get_json("https://api.openf1.org/v1/x")
+    t.now += 599
+    client.get_json("https://api.openf1.org/v1/x")
+    assert len(seen) == 1
+    t.now += 2
+    client.get_json("https://api.openf1.org/v1/x")
+    assert len(seen) == 2

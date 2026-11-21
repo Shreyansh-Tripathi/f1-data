@@ -29,7 +29,7 @@ from f1data.build.session import (
     f1db_retirement_reasons,
 )
 from f1data.build.standings import build_driver_standings, build_team_standings, title_context
-from f1data.calendar import should_build
+from f1data.calendar import should_build, should_poll
 from f1data.http import HttpClient, HttpError, OpenF1Locked
 from f1data.io import is_complete, read_json, write_model
 from f1data.manifest import write_manifest
@@ -40,6 +40,7 @@ log = logging.getLogger("f1data")
 
 ROOT = Path.cwd()
 SESSION_CODES = ["fp1", "fp2", "fp3", "sq", "sprint", "q", "race"]
+EXIT_LOCKED = 75  # EX_TEMPFAIL: OpenF1 locked during a live session; build.yml skips the poll or the run
 
 
 class Build:
@@ -67,6 +68,7 @@ class Build:
         self.locked = False
         self.written = 0
         self._f1db: dict[str, Any] | None = None
+        self._f1db_error: Exception | None = None
 
     def write(self, rel: str, model: Any) -> None:
         if write_model(self.out / rel, model):
@@ -203,8 +205,25 @@ class Build:
 
     def f1db(self) -> dict[str, Any]:
         if self._f1db is None:
-            self._f1db = f1db.download_json_single(self.c, f1db.latest_tag(self.c))
+            if self._f1db_error is not None:
+                raise self._f1db_error
+            try:
+                self._f1db = f1db.download_json_single(self.c, f1db.latest_tag(self.c))
+            except Exception as exc:  # remembered so a failing source isn't retried for every file
+                self._f1db_error = exc
+                raise
         return self._f1db
+
+    def session_f1db(self) -> dict[str, Any]:
+        """F1DB for session files, which must not depend on it: empty when unavailable, so the F1DB-derived
+        fields (qualifying status codes, retirement reasons) fall back or stay null until a later run."""
+        try:
+            return self.f1db()
+        except OpenF1Locked:
+            raise
+        except Exception as exc:  # noqa: BLE001 - any F1DB failure; session files must still be built
+            log.warning("F1DB unavailable, session files built without it: %s", exc)
+            return {}
 
     def build_driver_stats(self) -> None:
         db = self.f1db()
@@ -240,10 +259,6 @@ class Build:
             jolpica_rows = self.jolpica_rows(self.results, w.round, "Results")
         elif code == "sprint":
             jolpica_rows = self.jolpica_rows(self.sprint, w.round, "SprintResults")
-        if code in ("race", "sprint") and not jolpica_rows:
-            log.info("skip %s: Jolpica has no classification yet", rel)
-            return
-
         final = self.final(w, code)
         meta = SessionMeta(year=self.year, round=w.round, session=code, provisional=not final, generated_at=self.now)
         c, sk = self.c, s["session_key"]
@@ -260,13 +275,20 @@ class Build:
         pit = openf1.pit(c, sk, final=final) if is_race else []
 
         if is_race:
+            if not jolpica_rows and not results:
+                log.info("skip %s: no classification from Jolpica or OpenF1 yet", rel)
+                return
+            if not jolpica_rows:
+                log.info("%s: classification from OpenF1 until Jolpica has round %d", rel, w.round)
             grid = openf1.starting_grid(c, w.meeting_key, final=final) if code == "race" else None
-            reasons = f1db_retirement_reasons(self.f1db(), w.race_start.date(), sprint=code == "sprint")
-            summary = build_race_summary(meta, jolpica_rows, results, weather, idmap, grid, rc, reasons, drivers)
+            reasons = f1db_retirement_reasons(self.session_f1db(), w.race_start.date(), sprint=code == "sprint")
+            summary = build_race_summary(
+                meta, jolpica_rows, results, weather, idmap, grid, rc, reasons, drivers, laps=laps
+            )
             self.write(f"{rel}/overtakes.json", build_overtakes(meta, openf1.overtakes(c, sk, final=final), idmap))
         elif code in ("q", "sq"):
             jq = self.jolpica_rows(self.qualifying, w.round, "QualifyingResults") if code == "q" else None
-            codes = f1db_quali_codes(self.f1db(), w.race_start.date(), sprint=code == "sq")
+            codes = f1db_quali_codes(self.session_f1db(), w.race_start.date(), sprint=code == "sq")
             summary = build_qualifying_summary(meta, results, weather, idmap, jq, codes, drivers, rc)
             self.write(f"{rel}/quali.json", build_quali(meta, results, idmap, jq, codes))
         else:
@@ -298,6 +320,14 @@ def should_build_command(args: argparse.Namespace, now: datetime) -> int:
     return 0
 
 
+def should_poll_command(args: argparse.Namespace, now: datetime) -> int:
+    season = read_json(args.out / str(args.year or now.year) / "season.json")
+    decision, reason = should_poll(now, season)
+    log.info("should-poll: %s (%s)", str(decision).lower(), reason)
+    print(str(decision).lower())
+    return 0
+
+
 def main(argv: list[str] | None = None, *, client: HttpClient | None = None, now: datetime | None = None) -> int:
     parser = argparse.ArgumentParser(prog="f1data")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -310,11 +340,16 @@ def main(argv: list[str] | None = None, *, client: HttpClient | None = None, now
     b.add_argument("--out", type=Path, default=ROOT / "site" / "v1")
     b.add_argument("--cache", type=Path, default=ROOT / ".cache")
     b.add_argument("--lag-file", type=Path, help="publish-lag record (default: <out>/../meta/lag.json)")
+    b.add_argument("--ttl-minutes", type=float, default=60, help="cache lifetime of provisional responses")
     b.add_argument("-v", "--verbose", action="store_true")
     sb = sub.add_parser("should-build", help="print true/false: should a scheduled run build now?")
     sb.add_argument("--year", type=int, help="season to check (default: current UTC year)")
     sb.add_argument("--out", type=Path, default=ROOT / "site" / "v1")
     sb.add_argument("-v", "--verbose", action="store_true")
+    sp = sub.add_parser("should-poll", help="print true/false: is a round in progress, so a run should keep polling?")
+    sp.add_argument("--year", type=int, help="season to check (default: current UTC year)")
+    sp.add_argument("--out", type=Path, default=ROOT / "site" / "v1")
+    sp.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args(argv)
 
     logging.basicConfig(
@@ -323,12 +358,16 @@ def main(argv: list[str] | None = None, *, client: HttpClient | None = None, now
     logging.getLogger("httpx").setLevel(logging.WARNING)
     if args.command == "should-build":
         return should_build_command(args, now or datetime.now(UTC))
-    http = client or HttpClient(args.cache, offline=args.offline)
+    if args.command == "should-poll":
+        return should_poll_command(args, now or datetime.now(UTC))
+    http = client or HttpClient(args.cache, offline=args.offline, ttl_s=args.ttl_minutes * 60)
     lag_file = args.lag_file or args.out.parent / "meta" / "lag.json"
     clock = (lambda: now) if now else (lambda: datetime.now(UTC))
     build = Build(http, args.out, args.year, now or datetime.now(UTC), args.force, lag_file, clock)
     build.run(args.round, args.session)
-    return 1 if build.failures else 0
+    if build.failures:
+        return 1
+    return EXIT_LOCKED if build.locked else 0
 
 
 if __name__ == "__main__":

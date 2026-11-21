@@ -1,8 +1,9 @@
 """Shared HTTP client: per-host rate limiting, retry with backoff, on-disk cache.
 
-Every network request in the pipeline goes through `HttpClient`. It never sends
-auth headers. Cache entries are either *final* (kept forever) or provisional
-(re-fetched after `ttl`); callers decide which via `build.finality`.
+Every network request in the pipeline goes through `HttpClient`. It sends no auth
+headers, with one exception: Actions' own GITHUB_TOKEN to api.github.com (`TOKEN_HOSTS`).
+Cache entries are either *final* (kept forever) or provisional (re-fetched after
+`ttl_s`); callers decide which via `build.finality`.
 """
 
 from __future__ import annotations
@@ -31,10 +32,14 @@ MIN_INTERVAL_S = {
     "api.openf1.org": 2.0,  # observed ~30 req / min (429 + Retry-After: 60 when faster)
     "api.jolpi.ca": 0.5,  # ~4 req / s
     "api.multiviewer.app": 1.0,
+    "api.github.com": 1.0,
     "github.com": 1.0,
 }
 # Rolling one-hour request budget per host.
 HOURLY_BUDGET = {"api.jolpi.ca": 180}
+
+# The only host that may receive a token: GitHub's API, with the workflow's built-in GITHUB_TOKEN.
+TOKEN_HOSTS = {"api.github.com"}
 
 OPENF1_HOST = "api.openf1.org"
 OPENF1_EMPTY = "No results found."
@@ -71,9 +76,11 @@ class HttpClient:
         transport: httpx.BaseTransport | None = None,
         clock: Callable[[], float] = time.time,
         sleep: Callable[[float], None] = time.sleep,
+        ttl_s: float = PROVISIONAL_TTL_S,
     ) -> None:
         self.cache_dir = Path(cache_dir) / "http"
         self.offline = offline
+        self.ttl_s = ttl_s
         self._clock = clock
         self._sleep = sleep
         self._last_hit: dict[str, float] = {}
@@ -97,13 +104,18 @@ class HttpClient:
 
     # ------------------------------------------------------------------ public
 
-    def get_json(self, url: str, params: dict[str, Any] | None = None, *, final: bool = False) -> Any:
+    def get_json(
+        self, url: str, params: dict[str, Any] | None = None, *, final: bool = False, token: str | None = None
+    ) -> Any:
+        """`token` is sent as a bearer token, and only to `TOKEN_HOSTS`; it is not part of the cache key."""
         key = full_url(url, params)
+        if token and urlparse(key).hostname not in TOKEN_HOSTS:
+            raise ValueError(f"refusing to send a token to {urlparse(key).hostname}")
         path = self._cache_path(key, ".json")
         cached = self._read_cache(path, final)
         if cached is not None:
             return cached["body"]
-        resp = self._fetch(key)
+        resp = self._fetch(key, headers={"Authorization": f"Bearer {token}"} if token else None)
         if resp.status_code == 404 and urlparse(key).hostname == OPENF1_HOST and _is_openf1_empty(resp):
             log.warning("OpenF1 404 mapped to []: %s", key)
             body: Any = []
@@ -131,25 +143,26 @@ class HttpClient:
         return resp.content
 
     def redirect_target(self, url: str) -> str:
-        """Where `url` redirects to (e.g. GitHub's "latest release" page to the tagged one). Cached for the
-        provisional TTL; if the request fails, the last known target is used and the failure logged."""
+        """Where `url` redirects to (e.g. GitHub's "latest release" page to the tagged one), without following it.
+        Cached for the provisional TTL."""
         path = self._cache_path(url, ".json")
         cached = self._read_cache(path, False)
         if cached is not None:
             return cached["body"]
-        try:
-            resp = self._fetch(url, follow_redirects=False)
-            if not resp.is_redirect or "location" not in resp.headers:
-                raise HttpError(url, resp.status_code, resp.text)
-        except (HttpError, httpx.HTTPError) as exc:
-            if not path.exists():
-                raise
-            stale = json.loads(path.read_text())["body"]
-            log.warning("%s; using the last known target %s", exc, stale)
-            return stale
+        resp = self._fetch(url, follow_redirects=False)
+        if not resp.is_redirect or "location" not in resp.headers:
+            raise HttpError(url, resp.status_code, resp.text)
         target = urljoin(url, resp.headers["location"])
         self._write_cache(path, {"url": url, "fetchedAt": self._clock(), "final": False, "body": target})
         return target
+
+    def cached(self, url: str, params: dict[str, Any] | None = None) -> tuple[float, Any] | None:
+        """(fetchedAt, body) of the last cached response for `url`, however old; None if never fetched."""
+        path = self._cache_path(full_url(url, params), ".json")
+        if not path.exists():
+            return None
+        entry = json.loads(path.read_text())
+        return entry["fetchedAt"], entry["body"]
 
     # ------------------------------------------------------------------ cache
 
@@ -167,7 +180,7 @@ class HttpClient:
         if self.offline or entry["final"]:
             return entry
         # A provisional entry never satisfies a request for final data.
-        if not want_final and self._clock() - entry["fetchedAt"] < PROVISIONAL_TTL_S:
+        if not want_final and self._clock() - entry["fetchedAt"] < self.ttl_s:
             return entry
         return None
 
@@ -179,14 +192,16 @@ class HttpClient:
 
     # ------------------------------------------------------------------ network
 
-    def _fetch(self, url: str, *, follow_redirects: bool = True) -> httpx.Response:
+    def _fetch(
+        self, url: str, *, follow_redirects: bool = True, headers: dict[str, str] | None = None
+    ) -> httpx.Response:
         if self.offline:
             raise CacheMiss(url)
         host = urlparse(url).hostname or ""
         for attempt in range(MAX_RETRIES + 1):
             self._throttle(host)
             try:
-                resp = self._client.get(url, follow_redirects=follow_redirects)
+                resp = self._client.get(url, follow_redirects=follow_redirects, headers=headers)
             except httpx.TransportError as exc:
                 if attempt == MAX_RETRIES:
                     raise

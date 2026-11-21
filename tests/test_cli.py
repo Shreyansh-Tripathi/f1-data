@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 import httpx
 from conftest import fixture_client
 
-from f1data.cli import main
+from f1data.cli import EXIT_LOCKED, main
 from f1data.http import HttpClient
 
 FINAL_NOW = datetime(2026, 11, 12, tzinfo=UTC)  # > 72 h after the Brazil race
@@ -148,10 +148,32 @@ def test_openf1_live_lockout_stops_the_run_without_failing(tmp_path, caplog):
     client = HttpClient(tmp_path / "cache", transport=httpx.MockTransport(handler), sleep=lambda s: None)
     with caplog.at_level(logging.WARNING):
         code = main(["build", "--year", "2026", "--round", "20", "--out", str(out)], client=client, now=FINAL_NOW)
-    assert code == 0
+    assert code == EXIT_LOCKED  # build.yml: skip this poll, or end a single run as "skipped, live session"
     assert "OpenF1 is locked" in caplog.text
     assert "failed:" not in caplog.text
     got = set(files(out))
     assert "2026/season.json" in got  # season-level files written before the lockout are kept
     assert not any(p.startswith("2026/20/") for p in got)  # no session got past laps
     assert json.loads((out / "manifest.json").read_text())["lastFullBuildAt"] is None
+
+
+def test_f1db_failure_does_not_block_session_files(tmp_path, caplog, monkeypatch):
+    from conftest import _respond
+
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host in ("github.com", "api.github.com"):
+            return httpx.Response(403, text="rate limited")
+        return _respond(request)
+
+    out = tmp_path / "site"
+    client = HttpClient(tmp_path / "cache", transport=httpx.MockTransport(handler), sleep=lambda s: None)
+    with caplog.at_level(logging.WARNING):
+        code = main(["build", "--year", "2026", "--round", "20", "--out", str(out)], client=client, now=FINAL_NOW)
+    assert code == 1  # season, drivers/teams and driver-stats need F1DB
+    assert "F1DB unavailable, session files built without it" in caplog.text
+    for session in ("fp1", "q", "race"):
+        assert (out / "2026" / "20" / session / "summary.json").exists()
+    race = json.loads((out / "2026/20/race/summary.json").read_text())
+    assert all(r["retirementReason"] is None for r in race["results"])

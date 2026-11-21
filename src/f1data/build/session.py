@@ -15,6 +15,7 @@ from f1data.build.classify import classify
 from f1data.build.ids import IdMap, parse_utc
 from f1data.models.base import SessionCode
 from f1data.models.session import (
+    Classification,
     ClassifiedResult,
     DriverLaps,
     DriverStrategy,
@@ -101,7 +102,7 @@ def build_weather(rows: Rows) -> Weather | None:
 
 def build_race_summary(
     meta: SessionMeta,
-    jolpica_rows: Rows,
+    jolpica_rows: Rows | None,
     openf1_results: Rows,
     weather: Rows,
     idmap: IdMap,
@@ -109,10 +110,37 @@ def build_race_summary(
     race_control: Rows = (),
     retirement_reasons: dict[int, str] | None = None,
     openf1_drivers: Rows = (),
+    laps: Rows = (),
 ) -> RaceSummary:
-    """Race or sprint classification from Jolpica; OpenF1 flags cross-check DNF/DNS/DSQ."""
-    by_driver = {idmap.driver(r["driver_number"]): r for r in openf1_results}
+    """Race or sprint classification from Jolpica; OpenF1 flags cross-check DNF/DNS/DSQ. Until Jolpica has the
+    round (`jolpica_rows` None or empty) the classification comes from OpenF1 alone (see `_openf1_results`)."""
     grid_fallback = {idmap.driver(g["driver_number"]): g["position"] for g in starting_grid or []}
+    if jolpica_rows:
+        results, fastest = _jolpica_results(
+            meta, jolpica_rows, openf1_results, idmap, grid_fallback, retirement_reasons
+        )
+    else:
+        results = _openf1_results(openf1_results, idmap, grid_fallback, retirement_reasons)
+        fastest = _fastest_lap(laps, idmap)
+    return RaceSummary(
+        **meta.fields(),
+        results=results,
+        fastest_lap=fastest,
+        weather=build_weather(weather),
+        periods=build_periods(race_control, f"{meta.year}/{meta.round}/{meta.session}"),
+        drivers=build_session_drivers(openf1_drivers, idmap),
+    )
+
+
+def _jolpica_results(
+    meta: SessionMeta,
+    jolpica_rows: Rows,
+    openf1_results: Rows,
+    idmap: IdMap,
+    grid_fallback: dict[str, int],
+    retirement_reasons: dict[int, str] | None,
+) -> tuple[list[ClassifiedResult], FastestLap | None]:
+    by_driver = {idmap.driver(r["driver_number"]): r for r in openf1_results}
     rows = sorted(jolpica_rows, key=lambda r: int(r.get("positionOrder") or r["position"]))
     winner = rows[0] if rows else None
     winner_ms = int(winner["Time"]["millis"]) if winner and winner.get("Time") else None
@@ -157,13 +185,73 @@ def build_race_summary(
         fl = row.get("FastestLap")
         if fl and fl.get("rank") == "1":
             fastest = FastestLap(driver_id=driver_id, lap=int(fl["lap"]), ms=clock_ms(fl["Time"]["time"]))
-    return RaceSummary(
-        **meta.fields(),
-        results=results,
-        fastest_lap=fastest,
-        weather=build_weather(weather),
-        periods=build_periods(race_control, f"{meta.year}/{meta.round}/{meta.session}"),
-        drivers=build_session_drivers(openf1_drivers, idmap),
+    return results, fastest
+
+
+# Position codes in Jolpica's style for results built from OpenF1 alone.
+OPENF1_POSITION_TEXT = {"dnf": "R", "dns": "W", "dsq": "D"}
+
+
+def _openf1_results(
+    openf1_results: Rows, idmap: IdMap, grid_fallback: dict[str, int], retirement_reasons: dict[int, str] | None
+) -> list[ClassifiedResult]:
+    """Provisional classification from OpenF1 session_result, used until Jolpica has the round.
+
+    A numeric position is classified (OpenF1 can flag late stoppers `dnf` while still classifying them); without
+    one, `dsq`/`dns` win, else the car is a DNF. Points are OpenF1's; status text is unknown."""
+
+    def order(r: dict[str, Any]) -> tuple[int, int, int]:
+        pos = r.get("position")
+        if isinstance(pos, int):
+            return (0, pos, 0)
+        rank = 3 if r.get("dsq") else 2 if r.get("dns") else 1
+        return (rank, 0, -(r.get("number_of_laps") or 0))
+
+    rows = sorted((r for r in openf1_results if r["driver_number"] in idmap.drivers), key=order)
+    winner = rows[0] if rows and isinstance(rows[0].get("position"), int) else None
+    winner_ms = ms(winner.get("duration")) if winner and isinstance(winner.get("duration"), (int, float)) else None
+    winner_laps = (winner.get("number_of_laps") or 0) if winner else 0
+    results = []
+    for r in rows:
+        number = r["driver_number"]
+        driver_id = idmap.drivers[number]
+        pos = r.get("position") if isinstance(r.get("position"), int) else None
+        c: Classification = "finished" if pos else "dsq" if r.get("dsq") else "dns" if r.get("dns") else "dnf"
+        laps = r.get("number_of_laps") or 0
+        gap_ms, laps_behind = _gap(r.get("gap_to_leader")) if c == "finished" and r is not winner else (None, None)
+        if c == "finished" and laps_behind is None and laps < winner_laps:
+            gap_ms, laps_behind = None, winner_laps - laps
+        if r is winner:
+            time_ms = winner_ms
+        else:
+            time_ms = winner_ms + gap_ms if winner_ms is not None and gap_ms is not None else None
+        results.append(
+            ClassifiedResult(
+                driver_id=driver_id,
+                team_id=idmap.teams[number],
+                position=pos,
+                position_text=str(pos) if pos else OPENF1_POSITION_TEXT[c],
+                classification=c,
+                grid=grid_fallback.get(driver_id),
+                laps=laps,
+                time_ms=time_ms,
+                gap_ms=gap_ms,
+                laps_behind=laps_behind,
+                points=float(r.get("points") or 0),
+                status_text=None,
+                retirement_reason=(retirement_reasons or {}).get(number),
+            )
+        )
+    return results
+
+
+def _fastest_lap(laps: Rows, idmap: IdMap) -> FastestLap | None:
+    timed = [x for x in laps if x.get("lap_duration") and x["driver_number"] in idmap.drivers]
+    if not timed:
+        return None
+    best = min(timed, key=lambda x: (x["lap_duration"], x["lap_number"]))
+    return FastestLap(
+        driver_id=idmap.drivers[best["driver_number"]], lap=best["lap_number"], ms=ms(best["lap_duration"])
     )
 
 

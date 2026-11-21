@@ -9,6 +9,7 @@ from f1data.build.ids import parse_utc
 
 TAIL = timedelta(hours=72)  # matches cache finality: data can still change until then
 FALLBACK = timedelta(hours=24)
+POLL_TAIL = timedelta(hours=6)  # sources publish within an hour or two of a session; Jolpica can take longer
 
 
 def should_build(now: datetime, season: dict[str, Any] | None, last_full_build: datetime | None) -> tuple[bool, str]:
@@ -37,3 +38,14 @@ def _window(rnd: dict[str, Any]) -> tuple[datetime, datetime] | None:
     if not times:
         times = [(parse_utc(rnd["start"]), parse_utc(rnd["start"]))]
     return min(t[0] for t in times), max(t[1] for t in times)
+
+
+def should_poll(now: datetime, season: dict[str, Any] | None) -> tuple[bool, str]:
+    """Pure decision: keep a run polling while `now` is between a round's first session start and 6 h after its
+    last session end, when new sessions can appear at any time. The 72 h tail is left to hourly runs."""
+    for rnd in (season or {}).get("rounds", []):
+        window = _window(rnd)
+        if window and window[0] <= now <= window[1] + POLL_TAIL:
+            until = window[1] + POLL_TAIL
+            return True, f"round {rnd['round']} sessions ({window[0]:%Y-%m-%d %H:%MZ} to {until:%Y-%m-%d %H:%MZ})"
+    return False, "no round in progress"

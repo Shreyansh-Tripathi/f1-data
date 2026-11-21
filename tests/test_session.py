@@ -349,3 +349,39 @@ def test_quali_tolerates_non_numeric_openf1_position(season_data, shared_client)
     assert summary.results[-1].driver_id == hadjar.driver_id  # unclassified entries sort last
     q = build_quali(meta("q", weekend.round), results, idmap, jq)
     assert next(d for d in q.drivers if d.driver_id == hadjar.driver_id).position is None
+
+
+def test_race_from_openf1_alone_until_jolpica_has_the_round(race_summary, brazil):
+    # Same race built without Jolpica rows: classification from OpenF1 session_result, provisional until Jolpica.
+    c = brazil["c"]
+    s = build_race_summary(
+        meta("race"),
+        None,
+        openf1.session_result(c, RACE),
+        openf1.weather(c, RACE),
+        brazil["idmap"](RACE),
+        openf1.starting_grid(c, 1299),
+        laps=openf1.laps(c, RACE),
+    )
+    by = {r.driver_id: r for r in s.results}
+    jolpica = {r.driver_id: r for r in race_summary.results}
+    assert set(by) == set(jolpica)
+    for driver_id, r in by.items():
+        j = jolpica[driver_id]
+        assert (r.classification, r.laps, r.points, r.laps_behind) == (
+            j.classification,
+            j.laps,
+            j.points,
+            j.laps_behind,
+        )
+        assert r.status_text is None
+    finishers = [r.driver_id for r in s.results if r.classification == "finished"]
+    assert finishers == [r.driver_id for r in race_summary.results if r.classification == "finished"]
+    winner = s.results[0]
+    assert winner.position == 1 and winner.gap_ms is None and winner.time_ms == jolpica[winner.driver_id].time_ms
+    second = s.results[1]
+    assert second.gap_ms == jolpica[second.driver_id].gap_ms
+    assert {r.position_text for r in s.results if r.classification == "dnf"} == {"R"}
+    assert {r.position_text for r in s.results if r.classification == "dns"} == {"W"}
+    assert all(r.grid == jolpica[r.driver_id].grid for r in s.results if r.classification != "dns")
+    assert s.fastest_lap == race_summary.fastest_lap  # fastest OpenF1 lap = Jolpica's rank 1
