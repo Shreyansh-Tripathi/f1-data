@@ -99,13 +99,43 @@ def test_cli_reads_published_files(tmp_path, season, capsys):
     assert should_build_cli(tmp_path, utc(2027, 1, 2), capsys) == "true"  # 2027/season.json missing
 
 
-def test_should_poll_only_while_a_round_is_in_progress(season):
-    # São Paulo: FP1 starts 2026-11-06 15:30Z, race ends 2026-11-08 19:00Z; polling stops 6 h later.
-    assert should_poll(utc(2026, 11, 6, 15, 29), season)[0] is False
-    assert should_poll(utc(2026, 11, 6, 15, 30), season)[0] is True
-    assert should_poll(utc(2026, 11, 7, 3), season)[0] is True  # overnight between sessions
-    assert should_poll(utc(2026, 11, 9, 1), season)[0] is True
-    decision, reason = should_poll(utc(2026, 11, 9, 1, 1), season)
-    assert decision is False and reason == "no round in progress"
+def test_should_poll_every_15_min_while_a_round_is_in_progress(season):
+    # São Paulo: FP1 starts 2026-11-06 15:30Z, race ends 2026-11-08 19:00Z; 15-min polling until 6 h later.
+    assert should_poll(utc(2026, 11, 6, 15, 29), season).poll is False
+    first = should_poll(utc(2026, 11, 6, 15, 30), season)
+    assert (first.poll, first.interval_s) == (True, 900) and first.reason.startswith("round 20 sessions")
+    assert should_poll(utc(2026, 11, 7, 3), season).interval_s == 900  # overnight between sessions
+    assert should_poll(utc(2026, 11, 9, 1), season).interval_s == 900
+    assert should_poll(utc(2026, 11, 9, 1, 1), season) == (False, 0, "no round in progress")  # race settled
     assert should_build(utc(2026, 11, 9, 1, 1), season, None)[0] is True  # the 72 h tail is left to hourly runs
-    assert should_poll(utc(2026, 11, 1), None)[0] is False
+    assert should_poll(utc(2026, 11, 1), None).poll is False
+
+
+def test_should_poll_every_30_min_while_race_is_provisional_capped_48h_after_race(season):
+    race_end = utc(2026, 11, 8, 19)
+    assert should_poll(race_end + timedelta(hours=6), season, {20}).interval_s == 900
+    d = should_poll(race_end + timedelta(hours=6, minutes=1), season, {20})
+    assert d.poll is True and d.interval_s == 1800 and "provisional" in d.reason
+    assert should_poll(race_end + timedelta(hours=48), season, {20}).interval_s == 1800
+    assert should_poll(race_end + timedelta(hours=48, minutes=1), season, {20}).poll is False  # cap
+    assert should_poll(race_end + timedelta(hours=7), season, {19}).poll is False  # another round's race
+    assert should_poll(race_end + timedelta(hours=7), season, set()).poll is False  # race summary final
+
+
+def test_should_poll_cli_reads_published_summaries(tmp_path, season, capsys):
+    out = tmp_path / "v1"
+    (out / "2026").mkdir(parents=True)
+    (out / "2026" / "season.json").write_text(json.dumps(season))
+    now = utc(2026, 11, 9, 12)  # 17 h after the São Paulo race
+
+    def poll():
+        assert main(["should-poll", "--year", "2026", "--out", str(out)], now=now) == 0
+        return capsys.readouterr().out.strip()
+
+    assert poll() == "true 1800"  # no race summary yet
+    summary = out / "2026" / "20" / "race" / "summary.json"
+    summary.parent.mkdir(parents=True)
+    summary.write_text(json.dumps({"provisional": True}))
+    assert poll() == "true 1800"
+    summary.write_text(json.dumps({"provisional": False}))
+    assert poll() == "false 0"

@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
-# Build and publish once or, with POLL=true, every POLL_INTERVAL_S seconds while a round is in progress
-# (`f1data should-poll`), until POLL_BUDGET_S seconds have passed (the job timeout is 6 h).
+# Build and publish once or, with POLL=true, repeatedly while `f1data should-poll` says so (it prints
+# `true <interval_s>` or `false 0`), until POLL_BUDGET_S seconds have passed (the job timeout is 6 h).
+# When the budget runs out and polling should go on, the run dispatches its successor (workflow_dispatch with
+# poll=true, via GITHUB_TOKEN); the concurrency group queues it behind this run.
 #
 # Exit codes of `f1data build`: 0 ok, 1 something failed (keep going, fail the job at the end),
 # 75 OpenF1 locked during a live session (skip this poll; a single run ends as "skipped, live session").
 set -uo pipefail
 
-: "${YEAR:?}" "${POLL:=false}" "${POLL_INTERVAL_S:=900}" "${POLL_BUDGET_S:=19800}" "${POLL_TTL_MINUTES:=10}"
+: "${YEAR:?}" "${POLL:=false}" "${POLL_BUDGET_S:=19800}" "${POLL_TTL_MINUTES:=10}"
 args=("$@")
 failed=0
 poll=0
@@ -32,6 +34,17 @@ publish() {
   echo "published $commit"
 }
 
+dispatch_successor() {
+  echo "poll budget used after $poll polls and polling should continue: dispatching the next run"
+  if GH_TOKEN="$GITHUB_TOKEN" gh workflow run build.yml --repo "$GITHUB_REPOSITORY" --ref "$GITHUB_REF_NAME" \
+    -f year="$YEAR" -f poll=true; then
+    echo "dispatched the next polling run"
+  else
+    echo "::error::could not dispatch the next run; scheduled runs will start one"
+    failed=1
+  fi
+}
+
 while :; do
   poll=$((poll + 1))
   before=$(manifest_hash)
@@ -54,17 +67,19 @@ while :; do
     *) echo "::error::build failed (exit $code)"; failed=1 ;;
   esac
   publish "$before" || { echo "::error::publish failed"; failed=1; }
-  [ "$POLL" = true ] && echo "::endgroup::"
-
   [ "$POLL" = true ] || break
-  if [ $((SECONDS + POLL_INTERVAL_S)) -ge "$POLL_BUDGET_S" ]; then
-    echo "poll budget used after $poll polls; the next scheduled run takes over"
+  echo "::endgroup::"
+
+  read -r keep interval <<<"$(uv run f1data should-poll --year "$YEAR")"
+  if [ "$keep" != true ] || ! [[ "$interval" =~ ^[0-9]+$ ]]; then
+    echo "polling not needed any more ($keep $interval); stopping after $poll polls"
     break
   fi
-  if [ "$(uv run f1data should-poll --year "$YEAR")" != true ]; then
-    echo "no round in progress; stopping after $poll polls"
+  if [ $((SECONDS + interval)) -ge "$POLL_BUDGET_S" ]; then
+    dispatch_successor
     break
   fi
-  sleep "$POLL_INTERVAL_S"
+  echo "next poll in ${interval}s"
+  sleep "$interval"
 done
 exit $failed

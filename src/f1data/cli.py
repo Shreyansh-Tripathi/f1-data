@@ -321,11 +321,25 @@ def should_build_command(args: argparse.Namespace, now: datetime) -> int:
 
 
 def should_poll_command(args: argparse.Namespace, now: datetime) -> int:
-    season = read_json(args.out / str(args.year or now.year) / "season.json")
-    decision, reason = should_poll(now, season)
-    log.info("should-poll: %s (%s)", str(decision).lower(), reason)
-    print(str(decision).lower())
+    """Prints `true <interval_s>` or `false 0`."""
+    year = args.year or now.year
+    season = read_json(args.out / str(year) / "season.json")
+    decision = should_poll(now, season, unsettled_rounds(args.out, year, season))
+    log.info("should-poll: %s every %ds (%s)", str(decision.poll).lower(), decision.interval_s, decision.reason)
+    print(str(decision.poll).lower(), decision.interval_s)
     return 0
+
+
+def unsettled_rounds(out: Path, year: int, season: dict[str, Any] | None) -> set[int]:
+    """Rounds whose race or sprint summary is missing or still provisional."""
+    unsettled = set()
+    for rnd in (season or {}).get("rounds", []):
+        for s in rnd.get("sessions", []):
+            if s["code"] in ("race", "sprint"):
+                summary = read_json(out / str(year) / str(rnd["round"]) / s["code"] / "summary.json")
+                if summary is None or summary.get("provisional", True):
+                    unsettled.add(rnd["round"])
+    return unsettled
 
 
 def main(argv: list[str] | None = None, *, client: HttpClient | None = None, now: datetime | None = None) -> int:
@@ -346,7 +360,7 @@ def main(argv: list[str] | None = None, *, client: HttpClient | None = None, now
     sb.add_argument("--year", type=int, help="season to check (default: current UTC year)")
     sb.add_argument("--out", type=Path, default=ROOT / "site" / "v1")
     sb.add_argument("-v", "--verbose", action="store_true")
-    sp = sub.add_parser("should-poll", help="print true/false: is a round in progress, so a run should keep polling?")
+    sp = sub.add_parser("should-poll", help="print `true <interval_s>` or `false 0`: should a run keep polling?")
     sp.add_argument("--year", type=int, help="season to check (default: current UTC year)")
     sp.add_argument("--out", type=Path, default=ROOT / "site" / "v1")
     sp.add_argument("-v", "--verbose", action="store_true")

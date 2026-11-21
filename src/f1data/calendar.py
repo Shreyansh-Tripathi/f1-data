@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
+from collections.abc import Collection
 from datetime import datetime, timedelta
-from typing import Any
+from typing import Any, NamedTuple
 
 from f1data.build.ids import parse_utc
 
 TAIL = timedelta(hours=72)  # matches cache finality: data can still change until then
 FALLBACK = timedelta(hours=24)
 POLL_TAIL = timedelta(hours=6)  # sources publish within an hour or two of a session; Jolpica can take longer
+POLL_INTERVAL_S = 15 * 60
+SETTLE_CAP = timedelta(hours=48)  # after the race: keep polling a provisional race/sprint until then
+SETTLE_INTERVAL_S = 30 * 60
 
 
 def should_build(now: datetime, season: dict[str, Any] | None, last_full_build: datetime | None) -> tuple[bool, str]:
@@ -40,12 +44,40 @@ def _window(rnd: dict[str, Any]) -> tuple[datetime, datetime] | None:
     return min(t[0] for t in times), max(t[1] for t in times)
 
 
-def should_poll(now: datetime, season: dict[str, Any] | None) -> tuple[bool, str]:
-    """Pure decision: keep a run polling while `now` is between a round's first session start and 6 h after its
-    last session end, when new sessions can appear at any time. The 72 h tail is left to hourly runs."""
+class PollDecision(NamedTuple):
+    poll: bool
+    interval_s: int  # seconds between polls; 0 when not polling
+    reason: str
+
+
+def should_poll(now: datetime, season: dict[str, Any] | None, unsettled: Collection[int] = ()) -> PollDecision:
+    """Pure decision: should a run keep polling, and how often?
+
+    Every 15 min from a round's first session start to 6 h after its last session end, when new sessions can
+    appear at any time. After that, every 30 min while the round is in `unsettled` (its race or sprint summary is
+    missing or provisional), capped at 48 h after the race. The rest of the 72 h tail is left to hourly runs.
+    The end of a polling run uses the same decision to dispatch its successor.
+    """
     for rnd in (season or {}).get("rounds", []):
         window = _window(rnd)
-        if window and window[0] <= now <= window[1] + POLL_TAIL:
+        if not window:
+            continue
+        if window[0] <= now <= window[1] + POLL_TAIL:
             until = window[1] + POLL_TAIL
-            return True, f"round {rnd['round']} sessions ({window[0]:%Y-%m-%d %H:%MZ} to {until:%Y-%m-%d %H:%MZ})"
-    return False, "no round in progress"
+            return PollDecision(
+                True,
+                POLL_INTERVAL_S,
+                f"round {rnd['round']} sessions ({window[0]:%Y-%m-%d %H:%MZ} to {until:%Y-%m-%d %H:%MZ})",
+            )
+        race_end = _race_end(rnd)
+        if rnd["round"] in unsettled and race_end and window[1] + POLL_TAIL < now <= race_end + SETTLE_CAP:
+            until = race_end + SETTLE_CAP
+            return PollDecision(
+                True, SETTLE_INTERVAL_S, f"round {rnd['round']} race/sprint provisional (until {until:%Y-%m-%d %H:%MZ})"
+            )
+    return PollDecision(False, 0, "no round in progress")
+
+
+def _race_end(rnd: dict[str, Any]) -> datetime | None:
+    race = next((s for s in rnd.get("sessions", []) if s["code"] == "race"), None)
+    return parse_utc(race["end"] or race["start"]) if race else None

@@ -6,7 +6,7 @@ Python pipeline that turns free F1 data sources into versioned static JSON, publ
 
 - Completed sessions only. No live timing.
 - This repo is **public** (free Actions minutes + free Pages).
-- Runs on GitHub Actions cron (hourly, calendar-aware, polling every 15 min while a round is in progress: see CI and publishing); output served from GitHub Pages under `/v1/`.
+- Runs on GitHub Actions (hourly cron as a backup starter, calendar-aware; while a round is in progress a run polls and dispatches its successor: see CI and publishing); output served from GitHub Pages under `/v1/`.
 - Actions runs start cold: restore prior output by checking out `gh-pages` into `site/`, and restore `.cache/` with `actions/cache`.
 - The app only reads our JSON. Never expose source-specific field names in output.
 - No FastF1: it needs a paid F1 TV subscription (see Findings).
@@ -20,7 +20,7 @@ Python pipeline that turns free F1 data sources into versioned static JSON, publ
 | MultiViewer `circuit_info_url` from OpenF1 `meetings` | Circuit outline, corners, rotation | Free, no auth. Only follow URLs under `https://api.multiviewer.app/`. Fetch once per circuit per season, cache permanently. Fallback: outline from OpenF1 `location` (no corners). |
 | F1DB (GitHub releases of `f1db/f1db`) | Career totals (titles, wins, podiums, starts, poles, fastest laps); qualifying status (`positionText`); retirement reasons (`reasonRetired`); round short names (`grandsPrix.name` via `races.grandPrixId`); fallback for driver code, nationality (country id → demonym via `countries`) and date of birth when Jolpica lacks them | Download release asset once per run. Use `f1db-json-single.zip` (6.8 MB, 85 MB unzipped). Find the latest tag via the GitHub API with Actions' `GITHUB_TOKEN` (unauthenticated: 60 req/h per IP, exhausted on shared runners); without a token or if that fails, the `github.com/f1db/f1db/releases/latest` redirect; then the most recently cached tag in `.cache/`. An F1DB failure never blocks session files: they are built without it (F1DB-derived fields fall back or stay null) and filled in on a later run. Filter season entrants to drivers with race starts. |
 
-Never send auth tokens. **Only exception:** the workflow's built-in `GITHUB_TOKEN` (free, no secret to manage), sent only to `api.github.com` for the F1DB release lookup and only inside Actions; `HttpClient` refuses to send a token to any other host. Never re-host team radio audio; store only F1's URL.
+Never send auth tokens. **Only exception:** the workflow's built-in `GITHUB_TOKEN` (free, no secret to manage), sent only to `api.github.com` (F1DB release lookup; `gh workflow run` for the next polling run) and only inside Actions; `HttpClient` refuses to send a token to any other host. Never re-host team radio audio; store only F1's URL.
 
 ## Output contract (`site/v1/`)
 
@@ -134,10 +134,15 @@ uv run f1data build --year 2026
     - `manifest.json` `lastFullBuildAt` is missing or more than 24 h old.
 
     `lastFullBuildAt` is set by a build with no `--round`/`--session` filter and no failures, so a failing build is retried hourly. Every full build changes it, so builds inside a window publish every hour.
-  - **Polling:** GitHub starts the hourly schedule only 3–4 times a day (see Findings), so while a round is in progress (`f1data should-poll`, pure function `calendar.py:should_poll`: first session start to 6 h after the last session end) a scheduled run keeps going: build and publish, sleep 15 min, repeat, for up to 5.5 h. Each poll uses `--ttl-minutes 10` so provisional responses are re-fetched every poll. The loop stops when no round is in progress or the budget is used; the queued scheduled run takes over. A failed poll doesn't stop the loop but fails the job at the end. The loop is `.github/scripts/build-and-publish.sh`.
+  - **Polling:** GitHub starts the hourly schedule only 3–4 times a day (see Findings), so a run started while polling is needed keeps going: build and publish, sleep, repeat. `f1data should-poll` (pure function `calendar.py:should_poll`) prints `true <interval_s>` or `false 0`:
+    - every 15 min from a round's first session start to 6 h after its last session end;
+    - then every 30 min while the round's race or sprint `summary.json` is missing or provisional, capped at 48 h after the race (in practice until the cap, since summaries stay provisional until the 72 h finality);
+    - otherwise no polling; the rest of the 72 h tail is left to hourly runs.
+
+    Each poll uses `--ttl-minutes 10` so provisional responses are re-fetched. A run polls for up to `poll_budget_minutes` (default 330, i.e. 5.5 h). When the budget runs out and `should-poll` is still true, it dispatches its successor (`gh workflow run build.yml -f poll=true` with `GITHUB_TOKEN`, hence `permissions: actions: write`); the concurrency group queues it. Scheduled runs are only a backup starter. The loop stops without a successor when `should-poll` turns false. A failed poll doesn't stop the loop but fails the job at the end. The loop is `.github/scripts/build-and-publish.sh`, tested with stubs in `tests/test_build_script.py`.
     `workflow_dispatch` always builds. If `should-build` errors or prints anything else, the run fails rather than skipping.
-  - **Manual runs:** `workflow_dispatch` with inputs `year`, `round`, `session`, `force`, `poll` (default false; ignored with `round` or `session`; polls only while a round is in progress).
-  - **Settings:** `permissions: contents: write`; concurrency group `build-data` without cancel-in-progress (runs queue); 350 min timeout (GitHub's job limit is 6 h).
+  - **Manual runs:** `workflow_dispatch` with inputs `year`, `round`, `session`, `force`, `poll` (default false; ignored with `round` or `session`; polls only while `should-poll` is true), `poll_budget_minutes` (default 330, max 330).
+  - **Settings:** `permissions: contents: write, actions: write` (dispatching the next polling run); concurrency group `build-data` without cancel-in-progress (runs queue); 350 min timeout (GitHub's job limit is 6 h).
   - **Steps:**
     1. Check out `gh-pages` into `site/`.
     2. `uv sync --locked`, then decide whether to build (`should-build`, or `true` for manual runs) and whether to poll (`should-poll`).
@@ -239,5 +244,5 @@ Findings:
 
 - OpenF1 locks out unauthenticated clients while a session is live, including past sessions: run 44668258214 (2026-11-20 03:31Z) got 401 `Live F1 session in progress. Global API access (including past sessions) is restricted to authenticated users until the session ends.` on `meetings?year=2026`. That was 29 min before FP2 started (04:00Z), so the lockout starts before the session, not only during it. A key is paid (Stripe link), so the build now treats the 401 as a skip.
 - `api.github.com/repos/f1db/f1db/releases/latest` returned 403 `API rate limit exceeded for 3.42.157.122` (run 44856340066, 2026-11-21 02:31Z): the unauthenticated limit is 60 req/h per IP and Actions runners share IPs. Season, drivers/teams and driver-stats failed. The tag now comes from the `github.com` redirect (302 to `/releases/tag/<tag>`), with the last known tag as fallback.
-- GitHub ran the hourly `17 * * * *` schedule only 3–4 times a day from 2026-11-12 to 2026-11-21 (start times drifting by 4–31 min, gaps up to 10 h), so publish lag on race weekends was up to 11.5 h (FP1). Scheduled runs now keep polling every 15 min while a round is in progress.
+- GitHub ran the hourly `17 * * * *` schedule only 3–4 times a day from 2026-11-12 to 2026-11-21 (start times drifting by 4–31 min, gaps up to 10 h), so publish lag on race weekends was up to 11.5 h (FP1). Polling runs now chain themselves (each dispatches its successor) while a round is in progress or its race is provisional; the schedule is only a backup starter.
 - Race and sprint publishing waited on Jolpica ("Jolpica has no classification yet"); they now publish from OpenF1 first. Jolpica had no 2026 round 21 qualifying at 05:57Z, 55 min after the session, while OpenF1 had it.

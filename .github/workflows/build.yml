@@ -24,12 +24,17 @@ on:
         type: boolean
         default: false
       poll:
-        description: Keep polling every 15 min while a round is in progress (ignored with round or session)
+        description: Keep polling while a round is in progress (ignored with round or session)
         type: boolean
         default: false
+      poll_budget_minutes:
+        description: How long a polling run polls before dispatching its successor
+        type: string
+        default: "330"
 
 permissions:
   contents: write
+  actions: write # a polling run dispatches its successor
 
 concurrency:
   group: build-data
@@ -56,8 +61,8 @@ jobs:
 
       # Scheduled runs build inside a round's window (first session to 72 h after the last), when the
       # last full build is over 24 h old, or before the season is published. Manual runs always build.
-      # While a round is in progress (first session to 6 h after the last) the run keeps polling: GitHub
-      # starts the hourly schedule only a few times a day.
+      # While a round is in progress (`f1data should-poll`) the run keeps polling and, when its budget runs out,
+      # dispatches its successor: GitHub starts the hourly schedule only a few times a day.
       - name: Decide whether to build and poll
         id: decide
         env:
@@ -76,7 +81,7 @@ jobs:
           poll=false
           if [ "$decision" = true ] && { [ "$EVENT" != workflow_dispatch ] || [ "$POLL_INPUT" = true ]; } \
             && [ -z "$ROUND" ] && { [ -z "$SESSION" ] || [ "$SESSION" = all ]; }; then
-            poll=$(uv run f1data should-poll --year "$year")
+            read -r poll _ <<<"$(uv run f1data should-poll --year "$year")"
             [[ "$poll" =~ ^(true|false)$ ]] || { echo "unexpected: $poll"; exit 1; }
           fi
           echo "build=$decision" >> "$GITHUB_OUTPUT"
@@ -99,7 +104,8 @@ jobs:
           SESSION: ${{ inputs.session }}
           FORCE: ${{ inputs.force }}
           POLL: ${{ steps.decide.outputs.poll }}
-          GITHUB_TOKEN: ${{ github.token }} # only for api.github.com (F1DB release lookup)
+          POLL_BUDGET_MINUTES: ${{ inputs.poll_budget_minutes || '330' }}
+          GITHUB_TOKEN: ${{ github.token }} # api.github.com only: F1DB release lookup, dispatching the next run
         run: |
           YEAR="${YEAR:-$(date -u +%Y)}"
           [[ "$YEAR" =~ ^[0-9]{4}$ ]] || { echo "bad year: $YEAR"; exit 2; }
@@ -111,4 +117,7 @@ jobs:
           fi
           if [ -n "$SESSION" ] && [ "$SESSION" != all ]; then args+=(--session "$SESSION"); fi
           if [ "$FORCE" = true ]; then args+=(--force); fi
+          [[ "$POLL_BUDGET_MINUTES" =~ ^[0-9]+$ ]] && [ "$POLL_BUDGET_MINUTES" -le 330 ] \
+            || { echo "bad poll_budget_minutes: $POLL_BUDGET_MINUTES"; exit 2; }
+          export POLL_BUDGET_S=$((POLL_BUDGET_MINUTES * 60))
           .github/scripts/build-and-publish.sh "${args[@]}"
