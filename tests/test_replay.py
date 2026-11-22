@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-from conftest import fixture_client
+from conftest import fixture_client, load
 
 from f1data.build import replay as R
 from f1data.cli import main
@@ -82,10 +82,40 @@ def test_spells_shared_by_half_the_field_are_dropped():
     assert R.own_stops(field, running=4) == {"d0": [[2_000_000, 2_030_000]], "d1": [], "d2": [], "d3": []}
 
 
-def test_end_place_near_the_pit_lane_path():
-    pit_points = [(0, 0), (500, 0), (1000, 0)]
-    assert R.end_place(600, 250, pit_points) == "pitLane"  # 25 m from the pit lane path
-    assert R.end_place(600, 400, pit_points) == "track"
+def test_end_place_by_distance_to_the_outline():
+    # A straight from (0,0) to (10000,0); the pit lane runs 20 m beside it, its entry on the track.
+    outline = R.TrackOutline([[0, 0], [10_000, 0], [10_000, 5000], [0, 5000]])
+    pit_points = [(1000, 0)] + [(x, -200) for x in range(1500, 4600, 250)] + [(5000, 0)]
+    assert R.end_place(2500, -200, pit_points, outline) == "pitLane"  # 20 m off the line, on the pit lane path
+    assert R.end_place(1050, 30, pit_points, outline) == "track"  # 3 m off the line at the pit entry
+    assert R.end_place(7000, -400, pit_points, outline) == "track"  # 40 m off, nowhere near the pit lane: run-off
+    assert R.end_place(7000, -400, pit_points, outline, garage=True) == "pitLane"  # feed ended off the map
+    # Into the pits, then the feed jumps to the placeholder: the last real sample is on the pit entry.
+    assert R.end_place(1050, 30, pit_points, outline, garage=True) == "pitLane"
+    assert R.end_place(600, 250, [(500, 0)]) == "pitLane"  # no outline: the pit lane path alone
+
+
+def test_near_track_reaches_the_same_distance_in_every_direction():
+    outline = R.TrackOutline([[0, 0], [10_000, 0], [10_000, 10_000], [0, 10_000]])
+    # 230 m off the line (real driving where the outline misses a section) is near, straight out or diagonally.
+    assert outline.near(5000, -2300) and outline.near(-1600, -1600)
+    # 470 m off (the closest placeholder seen) is not, in any direction; the square grid let diagonals through.
+    assert not outline.near(5000, -4700) and not outline.near(-2800, -2800)  # 396 m diagonally
+
+
+def test_off_map_placeholders_are_dropped_and_pit_stops_bridged():
+    outline = R.TrackOutline([[0, 0], [10_000, 0], [10_000, 5000], [0, 5000]])
+    # A pit stop: the car leaves the track at 10 s and OpenF1 parks it ~3 km off the map until 40 s.
+    pts = [(t, 100 + 100 * t // 1000, 0) for t in range(0, 10_001, 1000)]
+    pts += [(t, -30_000, -30_000) for t in range(11_000, 40_000, 1000)]
+    pts += [(t, 4000 + 100 * (t - 40_000) // 1000, 0) for t in range(40_000, 45_001, 1000)]
+    kept = R.clean(rows(pts), 0, outline)
+    assert all(x != -30_000 for _, x, _ in kept)
+    t0, xs, _ = R.resample(kept, 0, 45_000, bridge=[[10_000, 40_000]])
+    assert t0 == 0
+    assert xs[25] == 1100 + (4000 - 1100) * 15 // 30  # slides from pit entry to exit instead of holding
+    _, held, _ = R.resample(kept, 0, 45_000)
+    assert held[25] == 1100  # without the pit spell the long gap holds
 
 
 def test_interval_values():
@@ -130,8 +160,29 @@ def test_sprint_lap_one_and_two_retirements_singapore(car, low, high):
 # ---------------------------------------------------------------- end to end (Brazil, synthetic location)
 
 
+def interlagos() -> list[tuple[int, int]]:
+    """The recorded MultiViewer outline (the same points circuits/interlagos.json publishes)."""
+    mv = load("https://api.multiviewer.app/api/v1/circuits/14/2026")
+    return list(zip(mv["x"], mv["y"], strict=True))
+
+
+def along(path: list[tuple[int, int]], distance: float) -> tuple[int, int]:
+    """The point `distance` dm along the closed `path`."""
+    lengths = [math.dist(path[i], path[(i + 1) % len(path)]) for i in range(len(path))]
+    distance %= sum(lengths)
+    for i, length in enumerate(lengths):
+        if distance <= length:
+            (ax, ay), (bx, by) = path[i], path[(i + 1) % len(path)]
+            f = distance / length if length else 0
+            return round(ax + (bx - ax) * f), round(ay + (by - ay) * f)
+        distance -= length
+    return path[0]
+
+
 def synthetic_location(origin: int, stops: dict[int, int]):
-    """Every car laps a circle at 50 m/s from the formation lap (-200 s); a car in `stops` parks at that clock time."""
+    """Every car laps the Interlagos outline at 50 m/s from the formation lap (-200 s), each from its own spot; a car
+    in `stops` parks at that clock time."""
+    path = interlagos()
 
     def fetch(client, session_key, driver_number, start, end, *, final=False, cache=True):
         assert cache is False  # replay location is never cached
@@ -139,13 +190,10 @@ def synthetic_location(origin: int, stops: dict[int, int]):
         b = R.ms(end + "+00:00") - origin
         out = []
         for t in range(a, b, 250):
-            moving_from = -200_000
             t_eff = min(t, stops.get(driver_number, 10**12))
-            run = max(0, t_eff - moving_from) / 1000 * 500  # dm travelled
-            angle = run / 50_000 + driver_number
-            out.append(
-                {"date": iso(origin + t), "x": round(50_000 * math.cos(angle)), "y": round(50_000 * math.sin(angle))}
-            )
+            run = max(0, t_eff + 200_000) / 1000 * 500  # dm travelled
+            x, y = along(path, run + driver_number * 1000)
+            out.append({"date": iso(origin + t), "x": x, "y": y})
         return out
 
     return fetch

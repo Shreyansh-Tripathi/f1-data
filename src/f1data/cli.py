@@ -384,6 +384,7 @@ class Build:
             summary,
             strategy,
             race_control,
+            (read_json(self.out / "circuits" / f"{w.circuit_id}.json") or {}).get("polyline"),
         )
         if built is None:
             return

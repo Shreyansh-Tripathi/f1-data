@@ -38,7 +38,13 @@ SUSTAINED_MS = 10_000  # a retired car's last movement: covers SUSTAINED_DM over
 SUSTAINED_DM = 200
 FINISH_MARGIN_MS = 15_000
 CHEQUERED_CAP_MS = 180_000  # the window never runs more than this past the chequered flag
-PIT_LANE_DM = 300  # a car stopping within 30 m of where cars drove through the pit lane stopped in the pit lane
+PIT_LANE_DM = 300  # within 30 m of where cars drove through the pit lane
+ON_TRACK_DM = 80  # within 8 m of the outline (the centre line) is on the track, whatever else is nearby
+# Further than ~300 m from the outline is a placeholder: OpenF1 parks pit-lane cars 470-860 m off the map, while real
+# driving stays within ~230 m even where the outline's reference lap misses a section (round 11). With 25 m cells the
+# grid's answer is within ~35 m of the exact distance.
+OFF_MAP_DM = 3000
+GRID_DM = 250
 KEY_EVENTS = {"safetyCar", "penalty", "warning", "investigation", "noFurtherAction", "noted", "lapDeleted"}
 LAPS_DOWN = re.compile(r"\+(\d+) LAPS?")
 STATUS: dict[str, ReplayStatus] = {"finished": "finished", "dnf": "retired", "dns": "dns", "dsq": "dsq"}
@@ -65,18 +71,60 @@ def chequered(race_control: Rows) -> int | None:
     return max(flags) if flags else (max(finished) if finished else None)
 
 
+# ---------------------------------------------------------------- track
+
+
+class TrackOutline:
+    """The circuit's centre line: exact distance for a few points, and a coarse grid (GRID_DM cells) answering
+    "within about OFF_MAP_DM of the track?" in O(1) for every sample."""
+
+    def __init__(self, polyline: list[list[int]]) -> None:
+        self.points = [(p[0], p[1]) for p in polyline]
+        reach = math.ceil(OFF_MAP_DM / GRID_DM)
+        self.cells: set[tuple[int, int]] = set()
+        n = len(self.points)
+        for i in range(n):
+            (ax, ay), (bx, by) = self.points[i], self.points[(i + 1) % n]
+            steps = max(1, math.ceil(math.hypot(bx - ax, by - ay) / (GRID_DM / 2)))
+            for k in range(steps + 1):
+                cx = int((ax + (bx - ax) * k / steps) // GRID_DM)
+                cy = int((ay + (by - ay) * k / steps) // GRID_DM)
+                for dx in range(-reach, reach + 1):
+                    for dy in range(-reach, reach + 1):
+                        if dx * dx + dy * dy <= reach * reach:  # a disc, not a square
+                            self.cells.add((cx + dx, cy + dy))
+
+    def near(self, x: int, y: int) -> bool:
+        return (x // GRID_DM, y // GRID_DM) in self.cells
+
+    def distance(self, x: int, y: int) -> float:
+        best = math.inf
+        n = len(self.points)
+        for i in range(n):
+            (ax, ay), (bx, by) = self.points[i], self.points[(i + 1) % n]
+            dx, dy = bx - ax, by - ay
+            length = dx * dx + dy * dy
+            f = 0.0 if length == 0 else max(0.0, min(1.0, ((x - ax) * dx + (y - ay) * dy) / length))
+            best = min(best, math.hypot(x - (ax + f * dx), y - (ay + f * dy)))
+        return best
+
+
 # ---------------------------------------------------------------- samples
 
 
-def clean(rows: Iterable[dict[str, Any]], origin: int) -> list[tuple[int, int, int]]:
-    """(t, x, y) on the race clock, in time order, without (0,0) placeholders or glitches (faster than MAX_SPEED
-    from the last kept sample). After REANCHOR rejections in a row the last kept sample was the glitch: keep going
-    from the current one."""
+def clean(
+    rows: Iterable[dict[str, Any]], origin: int, outline: TrackOutline | None = None
+) -> list[tuple[int, int, int]]:
+    """(t, x, y) on the race clock, in time order, without placeholders ((0,0), or off the map: more than OFF_MAP_DM
+    from `outline`) or glitches (faster than MAX_SPEED from the last kept sample). After REANCHOR rejections in a row
+    the last kept sample was the glitch: keep going from the current one."""
     out: list[tuple[int, int, int]] = []
     rejected = 0
     for r in sorted(rows, key=lambda r: r["date"]):
         x, y = r.get("x"), r.get("y")
         if x is None or y is None or (x == 0 and y == 0):
+            continue
+        if outline is not None and not outline.near(x, y):
             continue
         t = ms(r["date"]) - origin
         if out:
@@ -91,9 +139,13 @@ def clean(rows: Iterable[dict[str, Any]], origin: int) -> list[tuple[int, int, i
     return out
 
 
-def resample(samples: list[tuple[int, int, int]], first: int, last: int) -> tuple[int | None, list[int], list[int]]:
+def resample(
+    samples: list[tuple[int, int, int]], first: int, last: int, bridge: Iterable[list[int]] = ()
+) -> tuple[int | None, list[int], list[int]]:
     """Positions every STEP_MS on the shared clock from `first` to `last` (both multiples of STEP_MS), starting at the
-    first grid time with data. Gaps up to MAX_GAP_MS are interpolated; longer ones hold the last position."""
+    first grid time with data. Gaps up to MAX_GAP_MS are interpolated, and so is any gap inside a `bridge` spell
+    (a pit stop, where OpenF1 may have no position); other long gaps hold the last position."""
+    spells = [(a - STEP_MS, b + MAX_GAP_MS) for a, b in bridge]
     if not samples:
         return None, [], []
     times = [s[0] for s in samples]
@@ -110,7 +162,7 @@ def resample(samples: list[tuple[int, int, int]], first: int, last: int) -> tupl
             _, x, y = samples[-1]
         else:
             (ta, xa, ya), (tb, xb, yb) = samples[i - 1], samples[i]
-            if tb - ta <= MAX_GAP_MS:
+            if tb - ta <= MAX_GAP_MS or any(a <= ta and tb <= b for a, b in spells):
                 f = (g - ta) / (tb - ta)
                 x, y = round(xa + (xb - xa) * f), round(ya + (yb - ya) * f)
             else:
@@ -210,8 +262,21 @@ def own_stops(spells: dict[str, list[list[int]]], running: int) -> dict[str, lis
     return {d: [s for s in v if shared(*s) * 2 < running] for d, v in spells.items()}
 
 
-def end_place(x: int, y: int, pit_points: list[tuple[int, int]]) -> ReplayEndPlace:
-    """pitLane when the car stopped within PIT_LANE_DM of where cars drove through the pit lane, else track."""
+def end_place(
+    x: int,
+    y: int,
+    pit_points: list[tuple[int, int]],
+    outline: TrackOutline | None = None,
+    garage: bool = False,
+) -> ReplayEndPlace:
+    """Where a retired car stopped. A feed that ended off the map (`garage`: OpenF1's pit-lane placeholder) is the
+    pit lane, wherever the last real sample was. Otherwise on the track (within ON_TRACK_DM of the outline) whatever
+    is nearby, since pit entry and exit run on the track; else pitLane within PIT_LANE_DM of where cars drove through
+    the pit lane."""
+    if garage:
+        return "pitLane"
+    if outline is not None and outline.distance(x, y) <= ON_TRACK_DM:
+        return "track"
     near = any(math.hypot(x - px, y - py) <= PIT_LANE_DM for px, py in pit_points)
     return "pitLane" if near else "track"
 
@@ -263,9 +328,12 @@ def build_replay(
     summary: dict[str, Any],
     strategy: dict[str, Any],
     race_control: dict[str, Any],
+    polyline: list[list[int]] | None = None,
 ) -> Replay | None:
     """None when lights out or the chequered flag can't be placed. `summary`, `strategy` and `race_control` are the
-    session's published files."""
+    session's published files; `polyline` the circuit's outline (circuits/{id}.json), which filters off-map
+    placeholders and places retirements."""
+    outline = TrackOutline(polyline) if polyline else None
     origin = race_start(laps, openf1_race_control)
     flag = chequered(openf1_race_control)
     if origin is None or flag is None:
@@ -288,21 +356,29 @@ def build_replay(
     end = end // STEP_MS * STEP_MS
     lookback = -FORMATION_LOOKBACK_MS
 
-    samples = {n: clean(locations.get(n, []), origin) for n in by_number}
-    early = {n: resample(s, lookback, 0) for n, s in samples.items()}
-    first = formation_start(early.values())
-    first = 0 if first is None else first
-
     stops = {
         d: [[ms(s["utc"]) - origin - s["laneMs"], ms(s["utc"]) - origin] for s in v.get("stops", [])]
         for d, v in strategy.get("drivers", {}).items()
     }
+    samples = {n: clean(locations.get(n, []), origin, outline) for n in by_number}
+    # A car whose feed ends off the map is in the garage.
+    garage: dict[int, bool] = {}
+    if outline is not None:
+        for n in by_number:
+            placed = [r for r in locations.get(n, []) if r.get("x") or r.get("y")]
+            if placed:
+                last = max(placed, key=lambda r: r["date"])
+                garage[n] = not outline.near(last["x"], last["y"])
+    early = {n: resample(s, lookback, 0) for n, s in samples.items()}
+    first = formation_start(early.values())
+    first = 0 if first is None else first
+
     reds = [
         (ms(p["startTime"]) - origin, ms(p["endTime"]) - origin)
         for p in summary.get("periods", [])
         if p["kind"] == "red"
     ]
-    tracks = {n: resample(s, first, end) for n, s in samples.items()}
+    tracks = {n: resample(s, first, end, stops.get(by_number[n], [])) for n, s in samples.items()}
 
     # Where cars actually drove through the pit lane, to tell a pit-lane retirement from one on track.
     pit_points: list[tuple[int, int]] = []
@@ -328,7 +404,7 @@ def build_replay(
             stop_t = min(last_movement(t0, xs, ys), end)
             keep = (stop_t - t0) // STEP_MS + 1
             xs, ys = xs[:keep], ys[:keep]
-        where = end_place(xs[-1], ys[-1], pit_points) if status == "retired" else "track"
+        where = end_place(xs[-1], ys[-1], pit_points, outline, garage.get(n, False)) if status == "retired" else "track"
         pit = [p for p in stops.get(driver_id, []) if p[0] <= stop_t]
         lap_starts = sorted(
             [r["lap_number"], ms(r["date_start"]) - origin]
