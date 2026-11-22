@@ -30,6 +30,10 @@ def _read(file: str) -> bytes:
 
 def _respond(request: httpx.Request) -> httpx.Response:
     entry = _index().get(str(request.url))
+    if entry is None and request.url.path == "/v1/location":
+        # Full-race location isn't recorded (~65 MB a race): answer as OpenF1 does without data, so the replay step
+        # skips. Replay tests patch openf1.location.
+        return httpx.Response(404, json={"detail": "No results found."})
     if entry is None:
         return httpx.Response(599, text=f"no fixture for {request.url}")
     if entry["kind"] == "redirect":

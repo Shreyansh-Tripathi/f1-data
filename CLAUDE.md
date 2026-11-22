@@ -54,6 +54,7 @@ Session codes: `fp1 fp2 fp3 sq sprint q race`. `summary.json` has a distinct sha
 - Versions so far:
   - Session files (`summary.json`, `laps.json`, `strategy.json`, `quali.json`, `overtakes.json`) are 2, and `race-control.json` is 3. In version 1 (2 for race-control), `provisional` meant "inside the 72 h corrections window"; it now means "race/sprint classified from OpenF1 only", and the window became the new field `final`. `race-control.json` version 2 was the `deletion.timeMs` → `lapTimeMs` rename.
   - `grid.json` (new 2026-11-22) is 1; its `provisional` means "qualifying order, no published starting grid yet".
+  - `replay.json` (new 2026-11-22) is 1.
   - Everything else is 1. `season.json` round `provisional` (provisional race winner) was additive, no bump.
 
 ## Rules
@@ -62,7 +63,7 @@ Session codes: `fp1 fp2 fp3 sq sprint q race`. `summary.json` has a distinct sha
 - Times as integer milliseconds; dates as UTC ISO-8601.
 - Every file has `schemaVersion` (per file, see Contract change policy) and `generatedAt`. Output models are `pydantic` v2; validate before writing.
 - Deterministic output: sorted keys, stable ordering, so unchanged data produces unchanged hashes. Keep the previous `generatedAt` when the rest of a file is unchanged.
-- `replay.json`: columnar per driver (`t`, `x`, `y`, `pos`), 1 Hz, integer coords. Budget < 2 MB per session.
+- `replay.json` (race and sprint, see Data rules: Replay): one 1 Hz clock in ms with 0 = lights out; per driver delta-encoded integer `x`/`y` from `t0`, plus laps, positions, intervals, pit and stopped spells and an `end` marker. Target < 1 MB gzip per session.
 - Idempotent and resumable: skip sessions whose `summary.json` exists with `final: true`, unless `--force`.
 - All HTTP through one client with retry, exponential backoff, per-host rate limiting, and an on-disk cache (`.cache/`, gitignored).
 
@@ -101,6 +102,12 @@ Session codes: `fp1 fp2 fp3 sq sprint q race`. `summary.json` has a distinct sha
 - **Driver identity.** `drivers.json` takes code, nationality and date of birth from Jolpica, falling back to F1DB per field. Number, colour and headshot come from OpenF1 (latest race session); drivers without OpenF1 data keep Jolpica's race number and have null colour/headshot.
 - **Circuits.** Coordinates stay in the OpenF1 location frame as integers; `rotation` is passed through and applied in the app.
 - **Grid.** `race/grid.json` and `sprint/grid.json` are built once the q/sq session has ended and its `quali.json` exists (a separate step after the q/sq build, skipped once `grid.json` is final). Order, first available: Jolpica race/sprint `grid` (`basis: official`; grid 0 = pit lane, after every slot in qualifying order), OpenF1 `starting_grid` rows for the q/sq `session_key` (`startingGrid`; already post-penalty), else our qualifying order (`qualifying`, `provisional: true`). Notes explain a driver starting behind their qualifying position: `gridPenalty` (with `places`) and `pitLane` only from a confirmed source (F1DB `startingGridPositions` / `sprintStartingGridPositions`, Jolpica grid 0 unless the driver did not start), `dsq` from the qualifying status, otherwise `moved`. Drivers moved up by others' penalties get no note. `final` follows the race's finality.
+- **Replay.** `race/replay.json` and `sprint/replay.json`, built by a separate step after the session once its summary, strategy and race control are published and OpenF1 location reaches the chequered flag (checked on the classification's first driver; otherwise skipped until a later run).
+  - Clock: ms, 0 = lights out (lap 1 `date_start`, which equals `SESSION STARTED`), one sample per `stepMs` (1000). The window starts at the formation lap (median over cars of the first movement after 60 s still, within 15 min before lights out; else lights out) and ends 15 s after the last finisher's final lap, capped at chequered + 3 min.
+  - Samples: OpenF1 location without (0,0) placeholders or glitches (a jump faster than 120 m/s from the last kept sample; after 5 rejections in a row the new position is trusted), linearly interpolated onto the clock across gaps up to 10 s, held across longer ones. `x`/`y` are delta-encoded from `t0`. A car without data at the start (Las Vegas: Lawson until 151 s) starts at its first sample.
+  - Per driver: `laps` [lap, start t] (a finisher's last entry is the finish), `pos` and `int` changes from OpenF1 position / intervals (interval in 100 ms steps; `[t, null]` leading, `[t, null, laps]` a lap or more behind), `pit` [entry, exit] from strategy stops, `stopped` spells (still on track 20 s or more, then moving, outside pit stops and red flags), `end {t, status, where}`: a retired car's samples end at its last sustained movement, `where` is `pitLane` when it stopped within 30 m of where cars drove through the pit lane, else `track`; `dns` has no samples.
+  - Plus `periods` (summary SC/VSC/red), `events` (key race-control kinds and red flags) and `startLine` (median position at lap starts), all on the same clock.
+  - Location (~3 MB per driver, ~65 MB a race) is fetched once with `cache=False` (never in `.cache/`). Until the file is final, later runs only refresh its header and `end.status` from the summary without refetching; `--force` refetches everything, so keep forced full rebuilds rare.
 - **Publish lag.** The first time a build writes a session's `summary.json` (provisional or not), it adds `{sessionEnd, firstPublishedAt}` to `meta/lag.json`. `sessionEnd` is the last OpenF1 `CHEQUERED` flag, else the scheduled `date_end`. `firstPublishedAt` is when the build wrote the file; the push and Pages deploy follow about 1–2 min later. Entries are never updated; sessions published before tracking started (summary already present) get no entry.
 - **404s.** Every OpenF1 404 mapped to `[]` is logged at WARNING with its URL.
 - **OpenF1 live lockout.** A 401 `Live F1 session in progress` stops the build at that point without counting as a failure: files already written are kept and published, `f1data build` exits 75, and it doesn't count as a full build (`lastFullBuildAt` unchanged). Inside the polling loop that poll is logged and skipped and the loop retries at the next interval; a single run ends as "skipped, live session" (job succeeds) and the next run retries.
@@ -115,7 +122,7 @@ src/f1data/
   sources/           # openf1.py, jolpica.py, f1db.py, multiviewer.py  (raw fetch only)
   models/            # pydantic output models = the contract; contract.py = OUTPUT_FILES registry + snapshot shape
   build/             # finality.py, ids.py, classify.py, season.py, standings.py, drivers.py, driver_stats.py,
-                     # circuits.py, session.py  (replay.py: Phase 5, not written yet)
+                     # circuits.py, session.py, grid.py, replay.py
   calendar.py        # should_build / should_poll: pure scheduling decisions
   io.py              # validated, deterministic writes
   manifest.py
@@ -204,11 +211,7 @@ uv run f1data build --year 2026
 - Optional additive classification value `notClassified` for cars running at the end but under 90% (Stroll round 1, Albon round 7, Hülkenberg round 12 sprint); today they are `dnf`.
 - MultiViewer returns 404 for `madring` and `sepang` (2026); those circuits use the OpenF1-location outline fallback (no corners). Not raised with the owner yet.
 
-**Next step: Phase 5, Race Replay** (`replay.json`). Known so far:
-- Contract line: columnar per driver (`t`, `x`, `y`, `pos`), 1 Hz, integer coords in the OpenF1 location frame (same as `circuits/*.json`), < 2 MB per session (Phase 0: Brazil at 1 Hz = 3.12 MB raw JSON, 0.98 MB gzip; Pages serves gzip).
-- Source: OpenF1 `location`, fetched per driver (~4.5 s each, ~22 requests per race, ~100 MB raw), cut to the session window; `pos` from OpenF1 `position`. `sources/openf1.location` already exists (used for the outline fallback).
-- To do: `build/replay.py` + `Replay` model registered in `OUTPUT_FILES` (snapshot update), small recorded fixtures (a short window, like the existing 90 s Brazil sample), wiring in `cli.build_session`, a size check in tests, and a Findings entry with real sizes and request counts.
-- Ask the owner before starting: which sessions get a replay (race + sprint only?), what `t` is relative to (session start / race start, seconds), whether to include lap numbers or track status per sample, and whether to backfill the whole 2026 season (~22 extra OpenF1 requests per session at 2 s spacing) or only new rounds.
+**Phase 5, Race Replay:** pipeline side built (see Data rules: Replay); the app's Replay tab follows once `replay.json` is live.
 
 ## Findings log
 

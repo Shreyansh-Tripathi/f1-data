@@ -105,14 +105,21 @@ class HttpClient:
     # ------------------------------------------------------------------ public
 
     def get_json(
-        self, url: str, params: dict[str, Any] | None = None, *, final: bool = False, token: str | None = None
+        self,
+        url: str,
+        params: dict[str, Any] | None = None,
+        *,
+        final: bool = False,
+        token: str | None = None,
+        cache: bool = True,
     ) -> Any:
-        """`token` is sent as a bearer token, and only to `TOKEN_HOSTS`; it is not part of the cache key."""
+        """`token` is sent as a bearer token, and only to `TOKEN_HOSTS`; it is not part of the cache key.
+        `cache=False` neither reads nor writes the on-disk cache (very large responses, e.g. replay location)."""
         key = full_url(url, params)
         if token and urlparse(key).hostname not in TOKEN_HOSTS:
             raise ValueError(f"refusing to send a token to {urlparse(key).hostname}")
         path = self._cache_path(key, ".json")
-        cached = self._read_cache(path, final)
+        cached = self._read_cache(path, final) if cache else None
         if cached is not None:
             return cached["body"]
         resp = self._fetch(key, headers={"Authorization": f"Bearer {token}"} if token else None)
@@ -125,7 +132,8 @@ class HttpClient:
             raise HttpError(key, resp.status_code, resp.text)
         else:
             body = resp.json()
-        self._write_cache(path, {"url": key, "fetchedAt": self._clock(), "final": final, "body": body})
+        if cache:
+            self._write_cache(path, {"url": key, "fetchedAt": self._clock(), "final": final, "body": body})
         return body
 
     def get_bytes(self, url: str, *, final: bool = False) -> bytes:

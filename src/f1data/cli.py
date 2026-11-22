@@ -5,12 +5,13 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
+import time
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from f1data.build import circuits, ids
+from f1data.build import circuits, ids, replay
 from f1data.build.driver_stats import build_driver_stats
 from f1data.build.drivers import active_driver_ids, build_drivers, build_teams
 from f1data.build.finality import is_final
@@ -127,6 +128,8 @@ class Build:
             for code in SESSION_CODES:
                 if session_filter in (None, code) and code in w.sessions:
                     self.guarded(f"round {w.round} {code}", lambda w=w, code=code: self.build_session(w, code))
+                if code in ("race", "sprint") and session_filter in (None, code) and code in w.sessions:
+                    self.guarded(f"round {w.round} {code} replay", lambda w=w, code=code: self.build_replay(w, code))
                 if code in GRID_OF and session_filter in (None, code, GRID_OF[code]) and code in w.sessions:
                     grid = GRID_OF[code]
                     self.guarded(f"round {w.round} {grid} grid", lambda w=w, grid=grid: self.build_grid(w, grid))
@@ -321,6 +324,68 @@ class Build:
         if grid is not None:
             self.write(f"{rel}/grid.json", grid)
 
+    def build_replay(self, w: ids.Weekend, code: str) -> None:
+        """replay.json of a race or sprint once its summary is published and OpenF1 has location to the chequered
+        flag. Location (~3 MB per driver) is fetched once, uncached; later runs only refresh the header and statuses
+        until the file is final. `--force` refetches everything."""
+        s = w.sessions[code]
+        if ids.parse_utc(s["date_end"]) > self.now:
+            return
+        rel = f"{self.year}/{w.round}/{code}"
+        summary = read_json(self.out / rel / "summary.json")
+        strategy = read_json(self.out / rel / "strategy.json")
+        race_control = read_json(self.out / rel / "race-control.json")
+        if not isinstance(summary, dict) or not isinstance(strategy, dict) or not isinstance(race_control, dict):
+            return
+        jolpica = self.jolpica_rows(
+            self.results if code == "race" else self.sprint, w.round, "Results" if code == "race" else "SprintResults"
+        )
+        final = self.final(w, code)
+        meta = SessionMeta(
+            year=self.year, round=w.round, session=code, provisional=not jolpica, final=final, generated_at=self.now
+        )
+        existing = read_json(self.out / rel / "replay.json")
+        if isinstance(existing, dict) and not self.force:
+            if existing.get("final") is not True:
+                self.write(f"{rel}/replay.json", replay.refresh(existing, meta, summary))
+            return
+        c, sk = self.c, s["session_key"]
+        laps = openf1.laps(c, sk, final=final)
+        rc = openf1.race_control(c, sk, final=final)
+        origin, flag = replay.race_start(laps, rc), replay.chequered(rc)
+        if origin is None or flag is None:
+            log.info("skip %s replay: no race start or chequered flag yet", rel)
+            return
+        drivers = openf1.drivers(c, sk, final=final)
+        idmap = self.idmap(w, drivers)
+        order = {r["driverId"]: i for i, r in enumerate(summary.get("results", []))}
+        numbers = sorted((n for n, d in idmap.drivers.items() if d in order), key=lambda n: order[idmap.drivers[n]])
+        window = (_iso(origin - replay.FORMATION_LOOKBACK_MS), _iso(flag + replay.CHEQUERED_CAP_MS + 60_000))
+        started = time.monotonic()
+        locations: dict[int, list[dict[str, Any]]] = {}
+        for i, n in enumerate(numbers):
+            rows = openf1.location(c, sk, n, *window, final=final, cache=False)
+            if i == 0 and (not rows or replay.ms(max(r["date"] for r in rows)) < flag - 30_000):
+                log.info("skip %s replay: OpenF1 location doesn't reach the chequered flag yet", rel)
+                return
+            locations[n] = rows
+        built = replay.build_replay(
+            meta,
+            idmap,
+            locations,
+            laps,
+            openf1.position(c, sk, final=final),
+            openf1.intervals(c, sk, final=final),
+            rc,
+            summary,
+            strategy,
+            race_control,
+        )
+        if built is None:
+            return
+        self.write(f"{rel}/replay.json", built)
+        log.info("built %s/replay.json in %.0f s (%d location requests)", rel, time.monotonic() - started, len(numbers))
+
     def build_session(self, w: ids.Weekend, code: str) -> None:
         s = w.sessions[code]
         if ids.parse_utc(s["date_end"]) > self.now:
@@ -380,6 +445,11 @@ class Build:
         if first_publish and rel not in self.lag:
             self.lag[rel] = SessionLag(session_end=session_end(s, rc), first_published_at=self.clock())
             self.lag_changed = True
+
+
+def _iso(epoch_ms: int) -> str:
+    """OpenF1 date filter value."""
+    return datetime.fromtimestamp(epoch_ms / 1000, tz=UTC).strftime("%Y-%m-%dT%H:%M:%S")
 
 
 def session_end(session: dict[str, Any], race_control: list[dict[str, Any]]) -> datetime:

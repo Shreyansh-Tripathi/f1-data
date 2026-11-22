@@ -14,6 +14,7 @@ from f1data.models.circuit import Circuit
 from f1data.models.drivers import Drivers, DriverStatsFile, Teams
 from f1data.models.manifest import Manifest
 from f1data.models.meta import PublishLag
+from f1data.models.replay import Replay
 from f1data.models.season import Season
 from f1data.models.session import (
     Grid,
@@ -48,6 +49,7 @@ OUTPUT_FILES: dict[str, type[OutputFile]] = {
     "{year}/{round}/{session}/quali.json": Quali,
     "{year}/{round}/{session}/overtakes.json": Overtakes,
     "{year}/{round}/{session}/grid.json": Grid,
+    "{year}/{round}/{session}/replay.json": Replay,
 }
 
 

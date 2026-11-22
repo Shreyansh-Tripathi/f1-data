@@ -69,8 +69,16 @@ def overtakes(client: HttpClient, session_key: int, *, final: bool = False) -> R
 
 
 def location(
-    client: HttpClient, session_key: int, driver_number: int, start: str, end: str, *, final: bool = False
+    client: HttpClient,
+    session_key: int,
+    driver_number: int,
+    start: str,
+    end: str,
+    *,
+    final: bool = False,
+    cache: bool = True,
 ) -> Rows:
-    """Location samples for one driver between two ISO timestamps (circuit outline fallback)."""
+    """Location samples for one driver between two ISO timestamps (circuit outline fallback, replay). A race window
+    is ~3 MB per driver, so replay fetches it with `cache=False`."""
     params = {"session_key": session_key, "driver_number": driver_number, "date>": start, "date<": end}
-    return client.get_json(f"{BASE}/location", params, final=final)
+    return client.get_json(f"{BASE}/location", params, final=final, cache=cache)
