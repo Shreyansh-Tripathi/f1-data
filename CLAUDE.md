@@ -34,6 +34,7 @@ manifest.json                       # {files: {path: {hash, updatedAt}}, lastFul
 {year}/teams.json                   # name, shortName, colour, drivers
 circuits/{circuitId}.json           # polyline, corners, rotation, length (OpenF1 location frame)
 {year}/{round}/{session}/summary.json | laps.json | strategy.json | race-control.json | quali.json | overtakes.json | replay.json | radio.json
+{year}/{round}/race|sprint/grid.json  # starting grid, from the moment q/sq has results (see Data rules: Grid)
 ```
 
 Outside `v1/`, not in the manifest and not part of the app contract: `meta/lag.json` (`{sessions: {"{year}/{round}/{session}": {sessionEnd, firstPublishedAt}}}`) records publish lag.
@@ -52,6 +53,7 @@ Session codes: `fp1 fp2 fp3 sq sprint q race`. `summary.json` has a distinct sha
 - New output models must be registered in `OUTPUT_FILES` (a test checks every `OutputFile` subclass is listed).
 - Versions so far:
   - Session files (`summary.json`, `laps.json`, `strategy.json`, `quali.json`, `overtakes.json`) are 2, and `race-control.json` is 3. In version 1 (2 for race-control), `provisional` meant "inside the 72 h corrections window"; it now means "race/sprint classified from OpenF1 only", and the window became the new field `final`. `race-control.json` version 2 was the `deletion.timeMs` → `lapTimeMs` rename.
+  - `grid.json` (new 2026-11-22) is 1; its `provisional` means "qualifying order, no published starting grid yet".
   - Everything else is 1. `season.json` round `provisional` (provisional race winner) was additive, no bump.
 
 ## Rules
@@ -98,6 +100,7 @@ Session codes: `fp1 fp2 fp3 sq sprint q race`. `summary.json` has a distinct sha
   - `clinchedAtRound` is on the champion's entry: the first round after which this test was decisive.
 - **Driver identity.** `drivers.json` takes code, nationality and date of birth from Jolpica, falling back to F1DB per field. Number, colour and headshot come from OpenF1 (latest race session); drivers without OpenF1 data keep Jolpica's race number and have null colour/headshot.
 - **Circuits.** Coordinates stay in the OpenF1 location frame as integers; `rotation` is passed through and applied in the app.
+- **Grid.** `race/grid.json` and `sprint/grid.json` are built once the q/sq session has ended and its `quali.json` exists (a separate step after the q/sq build, skipped once `grid.json` is final). Order, first available: Jolpica race/sprint `grid` (`basis: official`; grid 0 = pit lane, after every slot in qualifying order), OpenF1 `starting_grid` rows for the q/sq `session_key` (`startingGrid`; already post-penalty), else our qualifying order (`qualifying`, `provisional: true`). Notes explain a driver starting behind their qualifying position: `gridPenalty` (with `places`) and `pitLane` only from a confirmed source (F1DB `startingGridPositions` / `sprintStartingGridPositions`, Jolpica grid 0 unless the driver did not start), `dsq` from the qualifying status, otherwise `moved`. Drivers moved up by others' penalties get no note. `final` follows the race's finality.
 - **Publish lag.** The first time a build writes a session's `summary.json` (provisional or not), it adds `{sessionEnd, firstPublishedAt}` to `meta/lag.json`. `sessionEnd` is the last OpenF1 `CHEQUERED` flag, else the scheduled `date_end`. `firstPublishedAt` is when the build wrote the file; the push and Pages deploy follow about 1–2 min later. Entries are never updated; sessions published before tracking started (summary already present) get no entry.
 - **404s.** Every OpenF1 404 mapped to `[]` is logged at WARNING with its URL.
 - **OpenF1 live lockout.** A 401 `Live F1 session in progress` stops the build at that point without counting as a failure: files already written are kept and published, `f1data build` exits 75, and it doesn't count as a full build (`lastFullBuildAt` unchanged). Inside the polling loop that poll is logged and skipped and the loop retries at the next interval; a single run ends as "skipped, live session" (job succeeds) and the next run retries.
@@ -280,6 +283,12 @@ Findings:
 - F1DB `reasonRetired` is null for some retirements (round 17 sprint: all 8 DNFs; `NC` rows). Jolpica says `R` where F1DB says `NC` for Stroll (round 1) and Albon (round 7).
 - Brazil 2026 race (round 20, wet): no SC, VSC or red flag. Race control has no `SafetyCar`-category messages; only local double yellows (sectors 2, 13, 14, 15), 107 blue flags, "RISK OF RAIN FOR THE F1 RACE IS 80%", and rainfall in 7 of 160 weather samples.
 - Stroll, round 1 2026: Jolpica `R` with status `Lapped`, 43 of 58 laps (74%, below the 52 needed). Not classified (F1DB `NC`, OpenF1 `+15 LAPS`), so `classification: dnf` with no position is correct even though `statusText` says Lapped. Albon (round 7, 55/66) and Hülkenberg (round 12 sprint, 7/24) are the same case.
+
+### 2026-11-22 — Starting grid sources
+
+- OpenF1 `starting_grid` (by `meeting_key`) is the grid after penalties: it matches Jolpica `grid` in every recorded grid (Brazil, Singapore race and sprint). Rows are keyed to the qualifying session that set them (`sq` for the sprint, `q` for the race); the race-summary fallback used to mix both. Las Vegas had it (22 rows, session 11416) right after the race; when it first appears before a race is still unobserved.
+- Race control never announces grid penalties or pit-lane starts: 0 matches for `GRID`, `PIT LANE START`, `START FROM THE PIT`, `BACK OF THE` in 618 messages of R10, R13 and R21 (q and race) plus the 15 recorded sessions.
+- F1DB `startingGridPositions` has `gridPenaltyPositions` (places, e.g. Brazil HAM 75), `positionText: "PL"` for pit-lane starts and `qualificationPositionNumber`; it arrives with the release after the race. A penalised driver can still move up (Brazil BOR, 22nd → 19th with a 10-place penalty).
 
 ### 2026-11-21 — Las Vegas weekend (round 21) build failures
 
