@@ -184,3 +184,12 @@ def test_end_to_end_brazil(tmp_path, monkeypatch):
     assert calls == []
     refreshed = json.loads(path.read_text())
     assert refreshed["final"] is True and refreshed["drivers"] == replay["drivers"]
+
+
+def test_a_final_session_without_a_replay_is_not_retried(tmp_path, monkeypatch):
+    calls = []
+    monkeypatch.setattr(openf1, "location", lambda *a, **k: calls.append(a) or [])
+    out = tmp_path / "site"
+    args = ["build", "--year", "2026", "--round", "20", "--session", "race", "--out", str(out)]
+    assert main(args, client=fixture_client(tmp_path / "cache"), now=datetime(2026, 11, 12, tzinfo=UTC)) == 0
+    assert calls == [] and not (out / "2026/20/race/replay.json").exists()

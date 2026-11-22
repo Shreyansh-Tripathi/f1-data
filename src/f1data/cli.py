@@ -349,6 +349,10 @@ class Build:
             if existing.get("final") is not True:
                 self.write(f"{rel}/replay.json", replay.refresh(existing, meta, summary))
             return
+        if final and not self.force:
+            # Final without a replay: OpenF1 never had complete location for it (2026 round 6). Don't ask every run.
+            log.debug("skip %s replay: final without location", rel)
+            return
         c, sk = self.c, s["session_key"]
         laps = openf1.laps(c, sk, final=final)
         rc = openf1.race_control(c, sk, final=final)
