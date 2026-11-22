@@ -272,6 +272,15 @@ class Build:
         race = next((r for r in races if int(r["round"]) == rnd), None)
         return race[key] if race else None
 
+    def starting_grid(self, w: ids.Weekend, code: str, final: bool) -> list[dict[str, Any]]:
+        """OpenF1 starting grid of a race or sprint. OpenF1 keys a meeting's grids to the qualifying session that
+        set them (q for the race, sq for the sprint), so a sprint weekend returns both."""
+        quali = w.sessions.get("q" if code == "race" else "sq")
+        if quali is None:
+            return []
+        rows = openf1.starting_grid(self.c, w.meeting_key, final=final)
+        return [g for g in rows if g.get("session_key") == quali["session_key"]]
+
     def build_session(self, w: ids.Weekend, code: str) -> None:
         s = w.sessions[code]
         if ids.parse_utc(s["date_end"]) > self.now:
@@ -309,7 +318,7 @@ class Build:
                 return
             if not jolpica_rows:
                 log.info("%s: classification from OpenF1 until Jolpica has round %d", rel, w.round)
-            grid = openf1.starting_grid(c, w.meeting_key, final=final) if code == "race" else None
+            grid = self.starting_grid(w, code, final)
             reasons = f1db_retirement_reasons(self.session_f1db(), w.race_start.date(), sprint=code == "sprint")
             summary = build_race_summary(
                 meta, jolpica_rows, results, weather, idmap, grid, rc, reasons, drivers, laps=laps

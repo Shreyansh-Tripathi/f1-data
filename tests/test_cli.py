@@ -117,6 +117,33 @@ def test_race_is_provisional_while_jolpica_lacks_the_round(tmp_path):
     assert rnd["winner"] == {"driverId": p1["driverId"], "teamId": p1["teamId"]}
 
 
+def test_openf1_grid_fallback_takes_each_grid_from_its_qualifying_session(tmp_path):
+    # Singapore (round 17) is a sprint weekend: OpenF1 starting_grid has the sprint grid (SQ session 11379) and the
+    # race grid (Q session 11384). Without Jolpica's round 17, each summary's grid comes from its own one.
+    from conftest import _respond, load
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        resp = _respond(request)
+        if request.url.host == "api.jolpi.ca" and "/2026/" in request.url.path and resp.status_code == 200:
+            body = json.loads(resp.content)
+            table = body["MRData"].get("RaceTable")
+            if table and "Races" in table:
+                table["Races"] = [r for r in table["Races"] if r.get("round") != "17"]
+                return httpx.Response(200, json=body)
+        return resp
+
+    out = tmp_path / "site"
+    client = HttpClient(tmp_path / "cache", transport=httpx.MockTransport(handler), sleep=lambda s: None)
+    main(["build", "--year", "2026", "--round", "17", "--out", str(out)], client=client, now=FINAL_NOW)
+    rows = load("https://api.openf1.org/v1/starting_grid", {"meeting_key": 1296})
+    for session, key in (("race", 11384), ("sprint", 11379)):
+        summary = json.loads((out / f"2026/17/{session}/summary.json").read_text())
+        assert summary["provisional"] is True
+        drivers = {d["number"]: d["id"] for d in summary["drivers"]}
+        expected = {drivers[g["driver_number"]]: g["position"] for g in rows if g["session_key"] == key}
+        assert {r["driverId"]: r["grid"] for r in summary["results"]} == expected, session
+
+
 def lag(tmp_path):
     path = tmp_path / "meta" / "lag.json"  # next to the output root, outside v1/
     return json.loads(path.read_text()) if path.exists() else None
