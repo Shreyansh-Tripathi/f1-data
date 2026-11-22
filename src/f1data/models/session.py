@@ -260,3 +260,29 @@ class Overtake(Model):
 
 class Overtakes(SessionFile):
     overtakes: list[Overtake]
+
+
+# ---------------------------------------------------------------- grid.json
+
+GridBasis = Literal["qualifying", "startingGrid", "official"]
+GridNoteKind = Literal["gridPenalty", "pitLane", "dsq", "moved"]
+
+
+class GridNote(Model):
+    kind: GridNoteKind  # gridPenalty and pitLane only from a confirmed source; moved = starts behind, cause unknown
+    places: int | None  # gridPenalty only, when the source states it
+
+
+class GridEntry(Model):
+    grid_position: int  # 1..n in starting order; pit-lane starters after every grid slot
+    driver_id: str
+    team_id: str
+    quali_position: int | None  # null when not classified in qualifying (dsq, dns, no time)
+    note: GridNote | None
+
+
+class Grid(SessionFile):
+    schema_version: int = 1
+    # provisional: the grid is the qualifying order (basis "qualifying"); no published starting grid yet
+    basis: GridBasis
+    entries: list[GridEntry]

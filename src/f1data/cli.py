@@ -14,6 +14,7 @@ from f1data.build import circuits, ids
 from f1data.build.driver_stats import build_driver_stats
 from f1data.build.drivers import active_driver_ids, build_drivers, build_teams
 from f1data.build.finality import is_final
+from f1data.build.grid import build_grid
 from f1data.build.season import build_season
 from f1data.build.session import (
     SessionMeta,
@@ -27,6 +28,7 @@ from f1data.build.session import (
     build_strategy,
     f1db_quali_codes,
     f1db_retirement_reasons,
+    f1db_starting_grid,
 )
 from f1data.build.standings import build_driver_standings, build_team_standings, title_context
 from f1data.calendar import should_build, should_poll
@@ -41,6 +43,7 @@ log = logging.getLogger("f1data")
 
 ROOT = Path.cwd()
 SESSION_CODES = ["fp1", "fp2", "fp3", "sq", "sprint", "q", "race"]
+GRID_OF = {"sq": "sprint", "q": "race"}  # qualifying session -> the race whose grid it sets
 EXIT_LOCKED = 75  # EX_TEMPFAIL: OpenF1 locked during a live session; build.yml skips the poll or the run
 
 
@@ -124,6 +127,9 @@ class Build:
             for code in SESSION_CODES:
                 if session_filter in (None, code) and code in w.sessions:
                     self.guarded(f"round {w.round} {code}", lambda w=w, code=code: self.build_session(w, code))
+                if code in GRID_OF and session_filter in (None, code, GRID_OF[code]) and code in w.sessions:
+                    grid = GRID_OF[code]
+                    self.guarded(f"round {w.round} {grid} grid", lambda w=w, grid=grid: self.build_grid(w, grid))
         # Again, so a race summary published from OpenF1 in this run puts its winner on the calendar now.
         self.guarded("season", self.build_season)
 
@@ -280,6 +286,40 @@ class Build:
             return []
         rows = openf1.starting_grid(self.c, w.meeting_key, final=final)
         return [g for g in rows if g.get("session_key") == quali["session_key"]]
+
+    def build_grid(self, w: ids.Weekend, code: str) -> None:
+        """grid.json of a race or sprint, once its qualifying session has ended and published quali.json."""
+        quali_code = "q" if code == "race" else "sq"
+        qs = w.sessions.get(quali_code)
+        if code not in w.sessions or qs is None or ids.parse_utc(qs["date_end"]) > self.now:
+            return
+        rel = f"{self.year}/{w.round}/{code}"
+        if not self.force and is_complete(self.out / rel, "grid.json"):
+            log.debug("skip %s/grid.json (complete)", rel)
+            return
+        quali = read_json(self.out / str(self.year) / str(w.round) / quali_code / "quali.json")
+        if not isinstance(quali, dict):
+            return
+        final = self.final(w, code)
+        jolpica_rows = (
+            self.jolpica_rows(self.results, w.round, "Results")
+            if code == "race"
+            else self.jolpica_rows(self.sprint, w.round, "SprintResults")
+        )
+        idmap = self.idmap(w, openf1.drivers(self.c, qs["session_key"], final=final))
+        f1db_rows = f1db_starting_grid(self.session_f1db(), w.race_start.date(), sprint=code == "sprint")
+        grid = build_grid(
+            SessionMeta(
+                year=self.year, round=w.round, session=code, provisional=False, final=final, generated_at=self.now
+            ),
+            quali,
+            idmap,
+            jolpica_rows,
+            self.starting_grid(w, code, final),
+            f1db_rows,
+        )
+        if grid is not None:
+            self.write(f"{rel}/grid.json", grid)
 
     def build_session(self, w: ids.Weekend, code: str) -> None:
         s = w.sessions[code]

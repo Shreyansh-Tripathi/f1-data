@@ -846,6 +846,11 @@ def f1db_quali_codes(f1db: dict[str, Any], race_day: date, sprint: bool) -> dict
     return {int(x["driverNumber"]): x["positionText"] for x in rows if x.get("driverNumber")} if rows else None
 
 
+def f1db_starting_grid(f1db: dict[str, Any], race_day: date, sprint: bool) -> list[dict[str, Any]] | None:
+    """F1DB starting grid rows (grid penalties, pit-lane starts) of the race or sprint; None until F1DB has it."""
+    return _f1db_rows(f1db, race_day, "sprintStartingGridPositions" if sprint else "startingGridPositions")
+
+
 def f1db_retirement_reasons(f1db: dict[str, Any], race_day: date, sprint: bool) -> dict[int, str]:
     """Car number -> F1DB reasonRetired ("Gearbox", "Collision", ...) for the race or sprint."""
     rows = _f1db_rows(f1db, race_day, "sprintRaceResults" if sprint else "raceResults") or []

@@ -38,9 +38,9 @@ def read_json(path: Path) -> Any | None:
         return None
 
 
-def is_complete(session_dir: Path) -> bool:
-    """A session is done when its summary exists and is final (past the corrections window)."""
-    summary = read_json(session_dir / "summary.json")
+def is_complete(session_dir: Path, name: str = "summary.json") -> bool:
+    """A session is done when its summary (or the file `name`) exists and is final (past the corrections window)."""
+    summary = read_json(session_dir / name)
     return isinstance(summary, dict) and summary.get("final") is True
 
 

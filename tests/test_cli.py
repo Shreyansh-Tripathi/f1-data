@@ -43,6 +43,7 @@ def test_build_round_writes_contract(tmp_path):
         "2026/20/race/strategy.json",
         "2026/20/race/race-control.json",
         "2026/20/race/overtakes.json",
+        "2026/20/race/grid.json",
         "2026/20/q/summary.json",
         "2026/20/q/quali.json",
         "2026/20/fp1/summary.json",

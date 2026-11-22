@@ -16,6 +16,7 @@ from f1data.models.manifest import Manifest
 from f1data.models.meta import PublishLag
 from f1data.models.season import Season
 from f1data.models.session import (
+    Grid,
     Laps,
     Overtakes,
     PracticeSummary,
@@ -46,6 +47,7 @@ OUTPUT_FILES: dict[str, type[OutputFile]] = {
     "{year}/{round}/{session}/race-control.json": RaceControl,
     "{year}/{round}/{session}/quali.json": Quali,
     "{year}/{round}/{session}/overtakes.json": Overtakes,
+    "{year}/{round}/{session}/grid.json": Grid,
 }
 
 

@@ -195,6 +195,28 @@
   },
   "schemaVersion": 1
  },
+ "{year}/{round}/{session}/grid.json": {
+  "fields": {
+   "basis": "enum(official,qualifying,startingGrid)",
+   "entries": "array",
+   "entries[]": "object",
+   "entries[].driverId": "string",
+   "entries[].gridPosition": "integer",
+   "entries[].note": "null|object",
+   "entries[].note.kind": "enum(dsq,gridPenalty,moved,pitLane)",
+   "entries[].note.places": "integer|null",
+   "entries[].qualiPosition": "integer|null",
+   "entries[].teamId": "string",
+   "final": "boolean",
+   "generatedAt": "string",
+   "provisional": "boolean",
+   "round": "integer",
+   "schemaVersion": "integer",
+   "session": "enum(fp1,fp2,fp3,q,race,sprint,sq)",
+   "year": "integer"
+  },
+  "schemaVersion": 1
+ },
  "{year}/{round}/{session}/laps.json": {
   "fields": {
    "drivers": "map",
