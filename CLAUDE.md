@@ -287,6 +287,15 @@ Findings:
 - Brazil 2026 race (round 20, wet): no SC, VSC or red flag. Race control has no `SafetyCar`-category messages; only local double yellows (sectors 2, 13, 14, 15), 107 blue flags, "RISK OF RAIN FOR THE F1 RACE IS 80%", and rainfall in 7 of 160 weather samples.
 - Stroll, round 1 2026: Jolpica `R` with status `Lapped`, 43 of 58 laps (74%, below the 52 needed). Not classified (F1DB `NC`, OpenF1 `+15 LAPS`), so `classification: dnf` with no position is correct even though `statusText` says Lapped. Albon (round 7, 55/66) and Hülkenberg (round 12 sprint, 7/24) are the same case.
 
+### 2026-11-22 — Race Replay sources and sizes
+
+- Lights out is one instant everywhere: every driver's lap 1 `date_start` = `SESSION STARTED` = `RACE START`. Race control never marks the formation lap (only free text on delayed starts), but location shows it: cars stand still, move about 3–4 min before lights out, then wait on the grid for the last ~30 s.
+- Location runs at ~3.8 Hz; a race window is ~3 MB and ~4.9 s per driver. It contains glitches (one Las Vegas sample implies 425 m/s), stretches of (0,0) (Las Vegas: Lawson until 151 s), and feed gaps where every car's position freezes (Britain sprint, 28 s), which look like the whole field stopping.
+- A retired car stops dead and OpenF1 keeps sending its position (drifting ~1 dm) until the session ends (Brazil car 18 at 2615 s, 10 s into lap 31).
+- Round 6 race: location is mostly missing (1802 samples per car, nothing between 391 s and 3402 s, nothing after 3423 s; flag at 8611 s after a 37-min red flag), so it has no replay. Its check costs one location request per run in case OpenF1 fills it in.
+- OpenF1 intervals as sparse changes (100 ms) are 22–88 KB gzip per session.
+- Local backfill 2026-11-22: 26 replays (21 races, 5 sprints with location), 167–546 KB gzip (mean ~407 KB), built in 43–65 s each, 22 location requests each; full-season build 21.5 min.
+
 ### 2026-11-22 — Starting grid sources
 
 - OpenF1 `starting_grid` (by `meeting_key`) is the grid after penalties: it matches Jolpica `grid` in every recorded grid (Brazil, Singapore race and sprint). Rows are keyed to the qualifying session that set them (`sq` for the sprint, `q` for the race); the race-summary fallback used to mix both. Las Vegas had it (22 rows, session 11416) right after the race; when it first appears before a race is still unobserved.
