@@ -252,6 +252,15 @@ def statuses(shared_client, idmap_for, db, weekends, season_data, sk, rnd, code)
     a = {e.driver_id: (e.status, e.status_text) for e in summary.results}
     b = {d.driver_id: (d.status, d.status_text) for d in quali.drivers}
     assert a == b  # both files agree
+    for d in quali.drivers:
+        if d.status == "dsq":  # knocked out in no segment; the published times stay
+            assert d.knockout is None and any((d.q1_ms, d.q2_ms, d.q3_ms))
+        else:
+            assert d.knockout is not None or not any((d.q1_ms, d.q2_ms, d.q3_ms))
+    assert all(e.eliminated_in is None for e in summary.results if e.status == "dsq")
+    assert sum(quali.eliminated.values()) == sum(
+        1 for d in quali.drivers if d.knockout and d.knockout != f"q{quali.segments}"
+    )
     return {k: v for k, v in a.items() if v != ("classified", None)}, len(a)
 
 

@@ -237,7 +237,7 @@ class QualiDriver(Model):
     q1_ms: int | None
     q2_ms: int | None
     q3_ms: int | None
-    knockout: Segment | None  # last segment with a time
+    knockout: Segment | None  # segment the driver's session ended in; null when disqualified
     status: QualiStatus
     status_text: str | None  # source code behind status, e.g. "DSQ", "NC", "RT"; null when classified normally
 

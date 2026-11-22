@@ -381,7 +381,8 @@ def build_qualifying_summary(
     results = []
     for r in sorted(openf1_results, key=_position_key):
         times = _segment_times(r)
-        knockout = reached.get(idmap.drivers[r["driver_number"]])
+        status = _quali_status_fields(r, f1db_codes, meta)
+        knockout = _knockout_unless_dsq(reached.get(idmap.drivers[r["driver_number"]]), status)
         results.append(
             QualifyingEntry(
                 driver_id=idmap.drivers[r["driver_number"]],
@@ -389,7 +390,7 @@ def build_qualifying_summary(
                 position=_position(r),
                 best_ms=min((t for t in times if t is not None), default=None),
                 eliminated_in=knockout if knockout and knockout != last else None,
-                **_quali_status_fields(r, f1db_codes, meta),
+                **status,
             )
         )
     return QualifyingSummary(
@@ -774,6 +775,7 @@ def build_quali(
     drivers = []
     for r in sorted(openf1_results, key=_position_key):
         q1, q2, q3 = _segment_times(r)
+        status = _quali_status_fields(r, f1db_codes, meta)
         drivers.append(
             QualiDriver(
                 driver_id=idmap.drivers[r["driver_number"]],
@@ -782,8 +784,8 @@ def build_quali(
                 q1_ms=q1,
                 q2_ms=q2,
                 q3_ms=q3,
-                knockout=reached.get(idmap.drivers[r["driver_number"]]),
-                **_quali_status_fields(r, f1db_codes, meta),
+                knockout=_knockout_unless_dsq(reached.get(idmap.drivers[r["driver_number"]]), status),
+                **status,
             )
         )
     last = _last_segment(reached)
@@ -823,6 +825,11 @@ def _quali_status_fields(r: dict[str, Any], f1db_codes: dict[int, str] | None, m
         log.warning("quali: car %s missing from F1DB %s/%s/%s", r["driver_number"], meta.year, meta.round, meta.session)
     status, text = quali_status(r, code)
     return {"status": status, "status_text": text}
+
+
+def _knockout_unless_dsq(knockout: str | None, status: dict[str, Any]) -> str | None:
+    """A disqualified driver was knocked out in no segment (their times stay as published)."""
+    return None if status["status"] == "dsq" else knockout
 
 
 def _f1db_rows(f1db: dict[str, Any], race_day: date, key: str) -> list[dict[str, Any]] | None:
